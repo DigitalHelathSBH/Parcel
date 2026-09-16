@@ -1,0 +1,19 @@
+{% macro searchable_select(id, label, name, placeholder, disabled=False) %}
+<div>
+  <label class="block text-base font-medium text-zinc-700 mb-1">{{ label }}</label>
+  <div class="relative" id="{{ id }}_wrap">
+    <input type="hidden" name="{{ name }}" id="{{ id }}_value">
+    <button type="button" id="{{ id }}_button"
+      class="ss-button {% if disabled %}opacity-50 cursor-not-allowed{% endif %}" {% if disabled %}disabled{% endif %}>
+      <span class="text-zinc-400">{{ placeholder }}</span>
+      <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div id="{{ id }}_panel" class="hidden ss-panel">
+      <div class="p-2 sticky top-0 bg-white border-b border-zinc-100">
+        <input type="text" id="{{ id }}_search" placeholder="พิมพ์เพื่อค้นหา..." class="ss-search">
+      </div>
+      <ul id="{{ id }}_list"></ul>
+    </div>
+  </div>
+</div>
+{% endmacro %}
