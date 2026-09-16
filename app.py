@@ -11,6 +11,7 @@
 เป็น "0.0.0.0" ด้านล่าง - ควรปรึกษาฝ่าย IT ก่อน เพราะจะเปิดพอร์ตนี้ให้เครื่องอื่น
 ในเครือข่ายเรียกเข้ามาได้ และควรพิจารณาเพิ่มการยืนยันตัวตนก่อนใช้งานจริง
 """
+import os
 from datetime import date
 from io import BytesIO
 
@@ -134,4 +135,5 @@ def generate_depreciation_summary():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="127.0.0.1", port=port, debug=False)
