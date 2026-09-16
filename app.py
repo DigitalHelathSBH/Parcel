@@ -16,11 +16,15 @@ from datetime import date
 from io import BytesIO
 
 from flask import Flask, jsonify, render_template, request, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import depreciation_builder as db
 import report_builder as rb
 
 app = Flask(__name__)
+# behind nginx we're reverse-proxied under a subpath (e.g. /parcel/); honor
+# X-Forwarded-Prefix (and the usual X-Forwarded-*) so url_for() builds correct links
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 
 @app.route("/")

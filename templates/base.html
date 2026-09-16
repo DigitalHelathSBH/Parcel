@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}SSB Reports{% endblock %}</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="/static/searchable-select.js"></script>
+<script>const APP_ROOT = "{{ request.script_root }}";</script>
+<script src="{{ url_for('static', filename='searchable-select.js') }}"></script>
 <script>
   tailwind.config = {
     theme: {
@@ -47,7 +48,7 @@
     <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-6">
       <div>
         <div class="px-3 mb-1.5 text-sm font-semibold uppercase tracking-wide text-zinc-400">ครุภัณฑ์</div>
-        <a href="/" class="nav-link {{ 'active' if request.path == '/' else '' }}">
+        <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.path == '/' else '' }}">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
           ตรวจครุภัณฑ์ประจำปี
         </a>
@@ -55,7 +56,7 @@
 
       <div>
         <div class="px-3 mb-1.5 text-sm font-semibold uppercase tracking-wide text-zinc-400">ค่าเสื่อมราคา</div>
-        <a href="/depreciation" class="nav-link {{ 'active' if request.path == '/depreciation' else '' }}">
+        <a href="{{ url_for('depreciation_page') }}" class="nav-link {{ 'active' if request.path == '/depreciation' else '' }}">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
           รายละเอียด / สรุป
         </a>

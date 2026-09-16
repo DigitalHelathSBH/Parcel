@@ -62,7 +62,7 @@ const divisionSelect = makeSearchableSelect('division', {
     sectionSelect.reset();
     sectionSelect.setDisabled(true);
     if (!division) return;
-    const depts = await loadJSON(`/api/depts?division=${encodeURIComponent(division)}`);
+    const depts = await loadJSON(`${APP_ROOT}/api/depts?division=${encodeURIComponent(division)}`);
     deptSelect.setItems(depts.map(d => ({ value: d.Dept, label: `${d.Dept} - ${d.DeptName ?? ''}` })));
     deptSelect.setDisabled(false);
   },
@@ -75,7 +75,7 @@ const deptSelect = makeSearchableSelect('dept', {
     sectionSelect.setDisabled(true);
     if (!dept) return;
     const division = divisionSelect.getValue();
-    const sections = await loadJSON(`/api/sections?division=${encodeURIComponent(division)}&dept=${encodeURIComponent(dept)}`);
+    const sections = await loadJSON(`${APP_ROOT}/api/sections?division=${encodeURIComponent(division)}&dept=${encodeURIComponent(dept)}`);
     sectionSelect.setItems(sections.map(s => ({ value: s.Section, label: `${s.Section} - ${s.SectionName ?? ''}` })));
     sectionSelect.setDisabled(false);
   },
@@ -84,7 +84,7 @@ const deptSelect = makeSearchableSelect('dept', {
 const sectionSelect = makeSearchableSelect('section', { placeholder: '-- ทุกงาน --' });
 
 async function initDivisions() {
-  const divisions = await loadJSON('/api/divisions');
+  const divisions = await loadJSON(`${APP_ROOT}/api/divisions`);
   divisionSelect.setItems(divisions.map(d => ({ value: d.Division, label: `${d.Division} - ${d.DivisionName ?? ''}` })));
 }
 
@@ -98,7 +98,7 @@ document.getElementById('reportForm').addEventListener('submit', async (e) => {
 
   try {
     const formData = new FormData(e.target);
-    const res = await fetch('/generate', { method: 'POST', body: formData });
+    const res = await fetch(`${APP_ROOT}/generate`, { method: 'POST', body: formData });
     if (!res.ok) {
       const text = await res.text();
       status.className = 'text-base min-h-[20px] text-red-600';
