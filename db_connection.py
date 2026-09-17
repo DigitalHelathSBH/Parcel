@@ -12,24 +12,28 @@ def _escape(value: str) -> str:
     return "{" + value.replace("}", "}}") + "}"
 
 
-def _cp874_replace_decode(data, errors="replace"):
-    return codecs.decode(bytes(data), "cp874", "replace"), len(data)
+_REPLACE_SUFFIX = "_replace_errors"
 
 
-def _cp874_replace_lookup(name):
-    if name != "cp874_replace":
+def _replace_errors_lookup(name):
+    if not name.endswith(_REPLACE_SUFFIX):
         return None
-    base = codecs.lookup("cp874")
-    return codecs.CodecInfo(
-        encode=base.encode,
-        decode=_cp874_replace_decode,
-        name="cp874_replace",
-    )
+    base_name = name[: -len(_REPLACE_SUFFIX)]
+    try:
+        base = codecs.lookup(base_name)
+    except LookupError:
+        return None
+
+    def decode(data, errors="replace"):
+        return codecs.decode(bytes(data), base_name, "replace"), len(data)
+
+    return codecs.CodecInfo(encode=base.encode, decode=decode, name=name)
 
 
-# some legacy rows contain bytes that aren't valid cp874 (data-entry glitches);
-# decode those with U+FFFD replacement instead of raising and taking down the request
-codecs.register(_cp874_replace_lookup)
+# some legacy rows contain bytes that aren't valid in the configured encoding
+# (data-entry glitches); decode those with U+FFFD replacement instead of
+# raising and taking down the request
+codecs.register(_replace_errors_lookup)
 
 
 def get_connection() -> pyodbc.Connection:
@@ -41,8 +45,12 @@ def get_connection() -> pyodbc.Connection:
         f"PWD={_escape(os.environ['DB_PASSWORD'])};"
     )
     conn = pyodbc.connect(conn_str)
-    # legacy Thai columns are stored as Windows-874 (cp874), not the ODBC default
-    conn.setdecoding(pyodbc.SQL_CHAR, encoding="cp874_replace")
+    # Legacy Thai columns are stored server-side as Windows-874 (cp874). Whether the
+    # driver hands that to us raw or already transcodes it depends on platform/driver
+    # (e.g. msodbcsql on Linux transcodes SQL_CHAR to UTF-8 before it reaches pyodbc,
+    # while on Windows it typically doesn't) - override via DB_CHAR_ENCODING if needed.
+    char_encoding = os.environ.get("DB_CHAR_ENCODING", "cp874")
+    conn.setdecoding(pyodbc.SQL_CHAR, encoding=f"{char_encoding}{_REPLACE_SUFFIX}")
     conn.setdecoding(pyodbc.SQL_WCHAR, encoding="utf-16le")
     conn.setencoding(encoding="utf-16le")
     return conn
