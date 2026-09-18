@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% from "_macros.html" import searchable_select %}
+{% block title %}ครุภัณฑ์ต่ำกว่าเกณฑ์ - SSB Reports{% endblock %}
+{% block page_title %}รายงานครุภัณฑ์ต่ำกว่าเกณฑ์ (ต่ำกว่า 10,000 บาท){% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="rounded-xl border border-zinc-200 bg-white shadow-sm p-6">
+    <p class="text-base text-zinc-500 mb-6">ครุภัณฑ์ที่ไม่ขึ้นบัญชีสินทรัพย์ (ราคาต่ำกว่า 10,000 บาท) และยังไม่ตัดจำหน่าย จัดกลุ่มตามแหล่งเงิน</p>
+
+    <form id="lowValueForm" class="space-y-5">
+      <div>
+        <label for="as_of_date" class="block text-base font-medium text-zinc-700 mb-1">ข้อมูล ณ วันที่</label>
+        <input type="date" id="as_of_date" name="as_of_date" value="{{ today }}" required
+          class="w-full rounded-md border border-zinc-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+      </div>
+
+      {{ searchable_select("division", "ฝ่าย", "division", "-- ทุกฝ่าย --") }}
+      {{ searchable_select("dept", "แผนก", "dept", "-- ทุกแผนก --", disabled=True) }}
+      {{ searchable_select("section", "งาน", "section", "-- ทุกงาน --", disabled=True) }}
+
+      <button type="submit" id="submitBtn"
+        class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
+        สร้างรายงาน (Excel)
+      </button>
+      <div class="text-base min-h-[20px]" id="status"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+async function loadJSON(url) {
+  const res = await fetch(url);
+  return res.json();
+}
+
+const divisionSelect = makeSearchableSelect('division', {
+  placeholder: '-- ทุกฝ่าย --',
+  onChange: async (division) => {
+    deptSelect.reset();
+    deptSelect.setDisabled(true);
+    sectionSelect.reset();
+    sectionSelect.setDisabled(true);
+    if (!division) return;
+    const depts = await loadJSON(`${APP_ROOT}/api/depts?division=${encodeURIComponent(division)}`);
+    deptSelect.setItems(depts.map(d => ({ value: d.Dept, label: `${d.Dept} - ${d.DeptName ?? ''}` })));
+    deptSelect.setDisabled(false);
+  },
+});
+
+const deptSelect = makeSearchableSelect('dept', {
+  placeholder: '-- ทุกแผนก --',
+  onChange: async (dept) => {
+    sectionSelect.reset();
+    sectionSelect.setDisabled(true);
+    if (!dept) return;
+    const division = divisionSelect.getValue();
+    const sections = await loadJSON(`${APP_ROOT}/api/sections?division=${encodeURIComponent(division)}&dept=${encodeURIComponent(dept)}`);
+    sectionSelect.setItems(sections.map(s => ({ value: s.Section, label: `${s.Section} - ${s.SectionName ?? ''}` })));
+    sectionSelect.setDisabled(false);
+  },
+});
+
+const sectionSelect = makeSearchableSelect('section', { placeholder: '-- ทุกงาน --' });
+
+async function initDivisions() {
+  const divisions = await loadJSON(`${APP_ROOT}/api/divisions`);
+  divisionSelect.setItems(divisions.map(d => ({ value: d.Division, label: `${d.Division} - ${d.DivisionName ?? ''}` })));
+}
+
+document.getElementById('lowValueForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.className = 'text-base min-h-[20px] text-zinc-500';
+  status.textContent = 'กำลังสร้างรายงาน กรุณารอสักครู่...';
+
+  try {
+    const formData = new FormData(e.target);
+    const res = await fetch(`${APP_ROOT}/generate_low_value`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const text = await res.text();
+      status.className = 'text-base min-h-[20px] text-red-600';
+      status.textContent = text || 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : 'low_value_assets.xlsx';
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    status.className = 'text-base min-h-[20px] text-emerald-600';
+    status.textContent = 'สร้างรายงานสำเร็จ ดาวน์โหลดไฟล์แล้ว';
+  } catch (err) {
+    status.className = 'text-base min-h-[20px] text-red-600';
+    status.textContent = 'เกิดข้อผิดพลาด: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+initDivisions();
+</script>
+{% endblock %}

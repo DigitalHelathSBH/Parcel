@@ -19,6 +19,8 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import depreciation_builder as db
+import low_value_builder as lv
+import purchase_builder as pb
 import report_builder as rb
 
 app = Flask(__name__)
@@ -89,6 +91,57 @@ def generate():
     excel_bytes = rb.build_excel_bytes(df, fiscal_year, fiscal_period, as_of_date)
 
     filename = f"asset_annual_inspection_{as_of_date}.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/low_value")
+def low_value_page():
+    return render_template("low_value.html", today=date.today().isoformat())
+
+
+@app.route("/generate_low_value", methods=["POST"])
+def generate_low_value():
+    as_of_date = request.form.get("as_of_date") or date.today().isoformat()
+    division = request.form.get("division") or None
+    dept = request.form.get("dept") or None
+    section = request.form.get("section") or None
+
+    df = lv.fetch_low_value_data(as_of_date, division=division, dept=dept, section=section)
+    if df.empty:
+        return "ไม่พบครุภัณฑ์ต่ำกว่าเกณฑ์ตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
+
+    excel_bytes = lv.build_excel_bytes(df, as_of_date)
+    filename = f"low_value_assets_{as_of_date}.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/purchases")
+def purchases_page():
+    today = date.today()
+    return render_template("purchases.html", today_year=today.year, today_month=today.month)
+
+
+@app.route("/generate_purchases", methods=["POST"])
+def generate_purchases():
+    year = int(request.form.get("year"))
+    month = int(request.form.get("month"))
+
+    df = pb.fetch_purchase_data(year, month)
+    if df.empty:
+        return "ไม่พบรายการจัดซื้อในเดือนที่เลือก กรุณาลองเดือนอื่น", 400
+
+    excel_bytes = pb.build_excel_bytes(df, year, month)
+    filename = f"purchases_{year}-{month:02d}.xlsx"
     return send_file(
         BytesIO(excel_bytes),
         as_attachment=True,
