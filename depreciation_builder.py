@@ -77,7 +77,9 @@ def fetch_depreciation_data(
     as_of_date = date(calendar_year, calendar_month, last_day)
 
     conditions = [
-        "(cm.DISPOSCODE IS NULL OR (cm.DISPOSDATETIME IS NOT NULL AND cm.DISPOSDATETIME > ?))",
+        # a few rows have DISPOSCODE set with no DISPOSDATETIME (incomplete disposal
+        # entries) - only an actual dated disposal on/before the report date excludes it
+        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
     ]
     params = [as_of_date]
 

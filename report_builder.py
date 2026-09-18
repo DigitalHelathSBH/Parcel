@@ -106,11 +106,10 @@ def fetch_asset_data(
     apply_depre_filter: bool = False,
 ) -> pd.DataFrame:
     conditions = [
-        "cm.DISPOSDATETIME IS NULL",
-        "cm.DISPOSCODE IS NULL",
+        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
         "cm.ACQDATETIME <= ?",
     ]
-    params = [as_of_date]
+    params = [as_of_date, as_of_date]
 
     join_dep = "LEFT JOIN"
     if apply_depre_filter:

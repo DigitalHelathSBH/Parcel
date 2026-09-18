@@ -27,7 +27,7 @@ def fetch_low_value_data(as_of_date, division=None, dept=None, section=None) -> 
     conditions = [
         "cm.PRICE < ?",
         "cm.ACQDATETIME <= ?",
-        "(cm.DISPOSCODE IS NULL OR (cm.DISPOSDATETIME IS NOT NULL AND cm.DISPOSDATETIME > ?))",
+        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
     ]
     params = [LOW_VALUE_THRESHOLD, as_of_date, as_of_date]
 
