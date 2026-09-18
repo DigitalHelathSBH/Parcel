@@ -123,8 +123,10 @@ def fetch_depreciation_data(
         dep.TOTALVALUEDEPRE AS AllTimeAccumDepre
     FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
+    -- DEPREGROUP='1' = ขึ้นบัญชีสินทรัพย์ (depreciated); '2' items are below the
+    -- capitalization threshold and belong to the low-value report, not this one
+    JOIN ASMSTDEP dep ON dep.ASSETCODE = cm.ASSETCODE AND dep.SUFFIX = cm.SUFFIX AND dep.DEPREGROUP = '1'
     LEFT JOIN YearAgg y ON y.ASSETCODE = cm.ASSETCODE AND y.SUFFIX = cm.SUFFIX
-    LEFT JOIN ASMSTDEP dep ON dep.ASSETCODE = cm.ASSETCODE AND dep.SUFFIX = cm.SUFFIX
     LEFT JOIN Division div ON cm.LOCATEDIVISION = div.Division
     LEFT JOIN SYSCONFIG ag ON ag.CODE = cm.ARTICLEGROUP AND ag.CTRLCODE = 100012
     LEFT JOIN SYSCONFIG bg ON bg.CODE = cm.PURCHASEBUDGETCODE AND bg.CTRLCODE = 120010
