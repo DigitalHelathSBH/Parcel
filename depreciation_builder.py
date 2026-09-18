@@ -80,8 +80,10 @@ def fetch_depreciation_data(
         # a few rows have DISPOSCODE set with no DISPOSDATETIME (incomplete disposal
         # entries) - only an actual dated disposal on/before the report date excludes it
         "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # don't show assets acquired after the report's as-of month
+        "cm.ACQDATETIME <= ?",
     ]
-    params = [as_of_date]
+    params = [as_of_date, as_of_date]
 
     if division:
         conditions.append("cm.LOCATEDIVISION = ?")
