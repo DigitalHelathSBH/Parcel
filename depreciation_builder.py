@@ -117,10 +117,12 @@ def fetch_depreciation_data(
         cm.PURCHASEBUDGETCODE,
         dbo.GetSSBName(bg.THAINAME) AS BudgetName,
         y.BFWVALUEDEPRE,
-        {depre_cols}
-    FROM YearAgg y
-    JOIN ASMSTCM cm ON cm.ASSETCODE = y.ASSETCODE AND cm.SUFFIX = y.SUFFIX
+        {depre_cols},
+        dep.TOTALVALUEDEPRE AS AllTimeAccumDepre
+    FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
+    LEFT JOIN YearAgg y ON y.ASSETCODE = cm.ASSETCODE AND y.SUFFIX = cm.SUFFIX
+    LEFT JOIN ASMSTDEP dep ON dep.ASSETCODE = cm.ASSETCODE AND dep.SUFFIX = cm.SUFFIX
     LEFT JOIN Division div ON cm.LOCATEDIVISION = div.Division
     LEFT JOIN SYSCONFIG ag ON ag.CODE = cm.ARTICLEGROUP AND ag.CTRLCODE = 100012
     LEFT JOIN SYSCONFIG bg ON bg.CODE = cm.PURCHASEBUDGETCODE AND bg.CTRLCODE = 120010
@@ -134,9 +136,15 @@ def fetch_depreciation_data(
         return df
 
     depre_amt_cols = [f"DEPREAMT{i}" for i in range(1, fiscal_col + 1)]
+    # assets with no ASMSTYEAR row for the selected fiscal year have already
+    # finished depreciating in an earlier year (no more movement to report this
+    # year), but they must still appear - carry their all-time accumulated
+    # depreciation from ASMSTDEP instead of dropping them from the report
+    has_year_row = df["BFWVALUEDEPRE"].notna()
     df["DepreMonth"] = df[f"DEPREAMT{fiscal_col}"].fillna(0.0)
     df["DepreYearCum"] = df[depre_amt_cols].fillna(0.0).sum(axis=1)
     df["AccumDepre"] = df["BFWVALUEDEPRE"].fillna(0.0) + df["DepreYearCum"]
+    df.loc[~has_year_row, "AccumDepre"] = df.loc[~has_year_row, "AllTimeAccumDepre"].fillna(0.0)
     df["TotalValue"] = df["QTY"].fillna(0.0) * df["PRICE"].fillna(0.0)
     df["NetValue"] = df["TotalValue"] - df["AccumDepre"]
     df["AcqDateThai"] = df["AcqDate"].apply(to_thai_date)
