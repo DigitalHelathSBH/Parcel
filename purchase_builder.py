@@ -117,6 +117,8 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     LEFT JOIN StockMainCategory smc ON smc.MainCategory = sm.MAINCATEGORY
     WHERE po.ISSUEDATETIME >= ? AND po.ISSUEDATETIME < ?
       AND po.CXLDATETIME IS NULL
+      AND po.STORE = '1'  -- คลังสินค้า "พัสดุ 1" เท่านั้น (ตามที่หน่วยงานระบุ)
+      -- ไม่กรอง POSTATUS (เทียบเท่า "All" ในหน้าจอ Check List P/O เดิม)
     ORDER BY po.ISSUEDATETIME, po.PONO, dt.SUFFIX
     """
     df = run_query(sql, params=(start_date, end_date))
