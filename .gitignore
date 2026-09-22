@@ -8,3 +8,6 @@ __pycache__/
 *.xlsx
 _ref_header_preview.json
 S__*.jpg
+*.jpg
+*.jpeg
+*.png
