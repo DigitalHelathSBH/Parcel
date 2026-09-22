@@ -99,6 +99,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
         dt.STOCKCODE,
         dbo.GetSSBName(sm.THAINAME) AS ItemName,
         dt.UNITCODE,
+        uc.UnitName,
         dt.STOCKACTCODE,
         sav.stockactname AS StockActName,
         smc.MainCategoryName,
@@ -115,6 +116,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     LEFT JOIN STOCK_MASTER sm ON sm.STOCKCODE = dt.STOCKCODE
     LEFT JOIN StockActView sav ON sav.stockactcode = dt.STOCKACTCODE
     LEFT JOIN StockMainCategory smc ON smc.MainCategory = sm.MAINCATEGORY
+    LEFT JOIN UnitCode uc ON uc.UnitCode = dt.UNITCODE
     WHERE po.ISSUEDATETIME >= ? AND po.ISSUEDATETIME < ?
       AND po.CXLDATETIME IS NULL
       AND po.STORE = '1'  -- คลังสินค้า "พัสดุ 1" เท่านั้น (ตามที่หน่วยงานระบุ)
@@ -128,7 +130,10 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     df["PODateThai"] = df["ISSUEDATETIME"].apply(to_thai_date)
     df["VendorLabel"] = df["VendorName"].fillna(df["SUPPLIERCODE"])
     df["PurchaseTypeLabel"] = df["PurchaseTypeName"].fillna("(ไม่ระบุวิธี)")
-    df["BudgetLabel"] = df["BudgetName"].fillna("(ไม่ระบุแหล่งเงิน)")
+    # "หมวดเงิน" ในรายงานต้นฉบับ (SKPOOUT-รายละเอียดใบบันทึกข้อความ) คือชื่อรหัสบัญชี
+    # (STOCKACTCODE ผ่าน StockActView) ไม่ใช่แหล่งเงินของทั้งใบสั่งซื้อ (PURCHASEBUDGETCODE)
+    df["ExpenseAccountLabel"] = df["StockActName"].fillna(df["STOCKACTCODE"])
+    df["UnitLabel"] = df["UnitName"].fillna(df["UNITCODE"])
     df["ItemLabel"] = df["ItemName"].fillna(df["STOCKCODE"])
     df["NetAmt"] = df["GOODSAMTAFTERITEMDISCOUNT"].fillna(0.0) + df["ALLOCATEDVATAMT"].fillna(0.0)
     df["PurchaseCategory"] = df.apply(
@@ -224,7 +229,7 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
 
             for i, (_, r) in enumerate(pdf.iterrows(), start=1):
                 values = [
-                    i, r["STOCKCODE"], r["ItemLabel"], r["UNITCODE"], r["BudgetLabel"],
+                    i, r["STOCKCODE"], r["ItemLabel"], r["UnitLabel"], r["ExpenseAccountLabel"],
                     r["REQUESTQTY"], r["LOTPRICE"], r["AMT"],
                     r["GOODSAMTAFTERITEMDISCOUNT"], r["ALLOCATEDVATAMT"], r["NetAmt"],
                 ]
