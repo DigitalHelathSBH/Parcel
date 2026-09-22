@@ -397,7 +397,7 @@ def _to_thai_date_short(value) -> str:
 _SAKOR_COLUMNS = [
     "ลำดับที่", "งานที่จัดซื้อหรือจัดจ้าง", "วงเงินที่จะซื้อหรือจ้าง", "ราคากลาง",
     "วิธีซื้อหรือจ้าง", "รายชื่อผู้เสนอราคา", "ราคาที่เสนอ", "ผู้ได้รับการคัดเลือก",
-    "ราคาที่ตกลงซื้อหรือจ้าง", "เหตุผลที่คัดเลือกโดยสรุป", "วันที่", "เลขที่",
+    "ราคาที่ตกลงซื้อหรือจ้าง", "เหตุผลที่คัดเลือกโดยสรุป", "เลขที่", "วันที่",
 ]
 _SAKOR_WIDTHS = [6, 26, 14, 14, 16, 24, 14, 24, 14, 30, 14, 14]
 _SAKOR_CONTRACT_HEADER = "เลขที่และวันที่ของสัญญาหรือข้อตกลง"
@@ -485,7 +485,7 @@ def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month
             i + 1, work_desc, net_total, net_total,
             purchase_method, r["VendorLabel"], net_total, r["VendorLabel"],
             net_total, _SAKOR_REASON_TEXT,
-            _to_thai_date_short(r["ISSUEDATETIME"]), r["PONO"],
+            r["PONO"], _to_thai_date_short(r["ISSUEDATETIME"]),
         ]
         for col_idx, value in enumerate(values, start=1):
             cell = ws.cell(row, col_idx, value)
