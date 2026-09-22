@@ -11,3 +11,5 @@ S__*.jpg
 *.jpg
 *.jpeg
 *.png
+_ref_*.json
+_ref_*.txt
