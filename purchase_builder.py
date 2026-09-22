@@ -12,7 +12,7 @@ from datetime import date
 
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from db_connection import run_query
@@ -135,6 +135,8 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     return df
 
 
+_CATEGORY_FILL = PatternFill("solid", fgColor="2563EB")
+
 _DETAIL_COLUMNS = [
     "ที่", "รหัสวัสดุ", "ชื่อวัสดุ", "หน่วย", "หมวดเงิน", "จำนวน", "ราคา",
     "จำนวนเงิน", "มูลค่าสินค้า", "ภาษีมูลค่าเพิ่ม", "เงินสุทธิ",
@@ -181,9 +183,11 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
 
     for category, cdf in df.groupby("PurchaseCategory", sort=False):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
-        catcell = ws.cell(row, 1, category)
-        catcell.font = Font(name=THAI_FONT, size=15, bold=True)
-        catcell.fill = _GROUP_FILL
+        catcell = ws.cell(row, 1, f"ประเภท: {category}")
+        catcell.font = Font(name=THAI_FONT, size=16, bold=True, color="FFFFFF")
+        catcell.fill = _CATEGORY_FILL
+        catcell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[row].height = 26
         row += 1
 
         cat_total = 0.0
