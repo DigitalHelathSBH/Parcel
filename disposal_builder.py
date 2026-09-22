@@ -25,6 +25,10 @@ def fetch_disposal_data(division=None, dept=None, section=None) -> pd.DataFrame:
     conditions = [
         "cm.DISPOSDATETIME IS NOT NULL",
         "cm.DISPOSCODE IS NOT NULL",
+        # exclude assets with a later transfer (ASMSTTF) after the disposal date -
+        # that means it was actually brought back into use, not really disposed
+        "NOT EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
+        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME)",
     ]
     params = []
 

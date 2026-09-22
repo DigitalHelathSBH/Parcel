@@ -107,8 +107,12 @@ def fetch_asset_data(
 ) -> pd.DataFrame:
     conditions = [
         # a genuine disposal needs BOTH fields; if either is missing (e.g. a transfer
-        # cleared DISPOSCODE but left a stale DISPOSDATETIME behind) treat as not disposed
-        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # cleared DISPOSCODE but left a stale DISPOSDATETIME behind) treat as not disposed.
+        # Also: a later transfer record (ASMSTTF) after the disposal date means the asset
+        # was brought back into use even though DISPOSCODE/DISPOSDATETIME were never cleared
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?"
+        " OR EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
+        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME))",
         "cm.ACQDATETIME <= ?",
     ]
     params = [as_of_date, as_of_date]

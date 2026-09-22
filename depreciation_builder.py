@@ -79,8 +79,12 @@ def fetch_depreciation_data(
     conditions = [
         # a genuine disposal needs BOTH DISPOSCODE and DISPOSDATETIME; if either is
         # missing (e.g. a transfer cleared DISPOSCODE but left a stale DISPOSDATETIME
-        # behind, or vice versa) treat the asset as not disposed
-        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # behind, or vice versa) treat the asset as not disposed. Also: a later transfer
+        # record (ASMSTTF) after the disposal date means the asset was brought back into
+        # use even though DISPOSCODE/DISPOSDATETIME were never cleared
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?"
+        " OR EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
+        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME))",
         # don't show assets acquired after the report's as-of month
         "cm.ACQDATETIME <= ?",
     ]
