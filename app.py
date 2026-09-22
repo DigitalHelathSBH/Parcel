@@ -210,24 +210,21 @@ def generate_depreciation_source_summary():
 
 @app.route("/disposal")
 def disposal_page():
-    today = date.today()
-    return render_template("disposal.html", today_year=today.year, today_month=today.month)
+    return render_template("disposal.html")
 
 
 @app.route("/generate_disposal", methods=["POST"])
 def generate_disposal():
-    year = int(request.form.get("year"))
-    month = int(request.form.get("month"))
     division = request.form.get("division") or None
     dept = request.form.get("dept") or None
     section = request.form.get("section") or None
 
-    df = disp.fetch_disposal_data(year, month, division=division, dept=dept, section=section)
+    df = disp.fetch_disposal_data(division=division, dept=dept, section=section)
     if df.empty:
         return "ไม่พบรายการตัดจำหน่ายตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
 
-    excel_bytes = disp.build_excel_bytes(df, year, month)
-    filename = f"disposal_detail_{year}-{month:02d}.xlsx"
+    excel_bytes = disp.build_excel_bytes(df)
+    filename = "disposal_detail_all.xlsx"
     return send_file(
         BytesIO(excel_bytes),
         as_attachment=True,

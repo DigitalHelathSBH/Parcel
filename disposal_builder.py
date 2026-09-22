@@ -1,11 +1,9 @@
 """
-รายงานครุภัณฑ์ตัดจำหน่าย รายละเอียด ตามแหล่งเงิน
+รายงานครุภัณฑ์ตัดจำหน่าย รายละเอียด ตามแหล่งเงิน (รวมทุกรายการที่ตัดจำหน่ายแล้ว)
 เลย์เอาต์เดียวกับรายงานค่าเสื่อมราคารายละเอียดตามแหล่งเงิน (depreciation_builder.build_detail_excel_bytes)
-แต่กรองเฉพาะรายการที่ตัดจำหน่ายแล้วในช่วงเดือน/ปีที่เลือก แทนคอลัมน์ค่าเสื่อมด้วยวันที่/เหตุผลตัดจำหน่าย
+แต่ตัดคอลัมน์ค่าเสื่อม/มูลค่าสุทธิออก แทนด้วยประเภทครุภัณฑ์ สถานะ (เหตุผลตัดจำหน่าย) และวันที่ตัดจำหน่าย
 """
-import calendar
 import io
-from datetime import date
 
 import pandas as pd
 from openpyxl import Workbook
@@ -15,7 +13,6 @@ from openpyxl.utils import get_column_letter
 from db_connection import run_query
 from depreciation_builder import (
     THAI_FONT,
-    THAI_MONTHS,
     _BORDER,
     _GROUP_FILL,
     _HEADER_FILL,
@@ -24,20 +21,12 @@ from depreciation_builder import (
 )
 
 
-def fetch_disposal_data(calendar_year: int, calendar_month: int, division=None, dept=None, section=None) -> pd.DataFrame:
-    start_date = date(calendar_year, calendar_month, 1)
-    if calendar_month == 12:
-        end_date = date(calendar_year + 1, 1, 1)
-    else:
-        end_date = date(calendar_year, calendar_month + 1, 1)
-
+def fetch_disposal_data(division=None, dept=None, section=None) -> pd.DataFrame:
     conditions = [
         "cm.DISPOSDATETIME IS NOT NULL",
         "cm.DISPOSCODE IS NOT NULL",
-        "cm.DISPOSDATETIME >= ?",
-        "cm.DISPOSDATETIME < ?",
     ]
-    params = [start_date, end_date]
+    params = []
 
     if division:
         conditions.append("cm.LOCATEDIVISION = ?")
@@ -92,14 +81,11 @@ def fetch_disposal_data(calendar_year: int, calendar_month: int, division=None, 
     return df
 
 
-_COLUMNS = ["รหัส", "รายการ", "ฝ่าย", "วันที่ได้มา", "มูลค่า", "วันที่ตัดจำหน่าย", "เหตุผลที่ตัดจำหน่าย"]
-_WIDTHS = [16, 36, 24, 14, 14, 16, 26]
+_COLUMNS = ["รหัส", "รายการ", "วันเดือนปี", "จำนวน", "มูลค่ารวม", "ประเภทครุภัณฑ์", "สถานะ", "วันที่อัพเดทสถานะ"]
+_WIDTHS = [16, 34, 14, 8, 14, 26, 20, 16]
 
 
-def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
-    fiscal_be = calendar_year + 543
-    month_label = THAI_MONTHS[calendar_month]
-
+def build_excel_bytes(df: pd.DataFrame) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "ตัดจำหน่าย"
@@ -117,7 +103,7 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
     c.alignment = Alignment(horizontal="center")
 
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
-    c2 = ws.cell(2, 1, f"ตัดจำหน่ายในเดือน{month_label} {fiscal_be}")
+    c2 = ws.cell(2, 1, "รายการที่ตัดจำหน่ายแล้วทั้งหมด")
     c2.font = Font(name=THAI_FONT, size=13)
     c2.alignment = Alignment(horizontal="center")
     row = 4
@@ -158,8 +144,8 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
             sub_total_value = 0.0
             for _, r in adf.iterrows():
                 values = [
-                    r["ASSETCODE"], r["AssetName"], r["DivisionLabel"], r["AcqDateThai"],
-                    r["TotalValue"], r["DisposeDateThai"], r["DisposeReasonLabel"],
+                    r["ASSETCODE"], r["AssetName"], r["AcqDateThai"], r["QTY"], r["TotalValue"],
+                    r["ArticleGroupLabel"], r["DisposeReasonLabel"], r["DisposeDateThai"],
                 ]
                 for col_idx, value in enumerate(values, start=1):
                     cell = ws.cell(row, col_idx, value)
@@ -168,7 +154,7 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
                     if col_idx == 5:
                         cell.number_format = "#,##0.00"
                         cell.alignment = Alignment(horizontal="right")
-                    elif col_idx in (4, 6):
+                    elif col_idx in (4, 8):
                         cell.alignment = Alignment(horizontal="center")
                 sub_total_value += float(r["TotalValue"])
                 row += 1
