@@ -393,8 +393,6 @@ def _to_thai_date_short(value) -> str:
     return f"{ts.day} {_THAI_MONTHS_ABBR[ts.month]} {(ts.year + 543) % 100:02d}"
 
 
-_SAKOR_REASON_SPECIFIC = "เป็นผู้มีคุณสมบัติถูกต้องตามเงื่อนไขในการตกลงราคา"
-
 _SAKOR_COLUMNS = [
     "ลำดับที่", "งานที่จัดซื้อหรือจัดจ้าง", "วงเงินที่จะซื้อหรือจ้าง", "ราคากลาง",
     "วิธีซื้อหรือจ้าง", "รายชื่อผู้เสนอราคา", "ราคาที่เสนอ", "ผู้ได้รับการคัดเลือก",
@@ -466,8 +464,9 @@ def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month
         else:
             work_desc = r["FirstItemName"]
 
-        is_specific = "เฉพาะเจาะจง" in (r["PurchaseTypeLabel"] or "")
-        reason = _SAKOR_REASON_SPECIFIC if is_specific else ""
+        # "วิธีซื้อหรือจ้าง" จากฐานข้อมูล (SKPO.PURCHASETYPECODE) ไม่น่าเชื่อถือพอจะอนุมานเหตุผล
+        # การคัดเลือกอัตโนมัติได้ (พบว่าบางค่าเป็นชื่อหน่วยงานแทนวิธีจัดซื้อจริง) - เว้นว่างให้กรอกเอง
+        reason = ""
         contract_ref = f"{r['PONO']}\n{_to_thai_date_short(r['ISSUEDATETIME'])}"
 
         values = [
