@@ -35,10 +35,16 @@
         </div>
       </div>
 
-      <button type="submit" id="submitBtn"
-        class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
-        สร้างรายงาน (Excel)
-      </button>
+      <div class="grid grid-cols-1 gap-3 pt-2">
+        <button type="submit" id="btnDetail" data-target="{{ url_for('generate_purchases') }}"
+          class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
+          รายงานรายละเอียด (Excel)
+        </button>
+        <button type="submit" id="btnSummary" data-target="{{ url_for('generate_purchases_summary') }}"
+          class="w-full rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
+          รายงานสรุปตามใบสั่งซื้อ (Excel)
+        </button>
+      </div>
       <div class="text-base min-h-[20px]" id="status"></div>
     </form>
   </div>
@@ -49,15 +55,17 @@ document.getElementById('month').value = "{{ today_month }}";
 
 document.getElementById('purchaseForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const btn = document.getElementById('submitBtn');
+  const submitter = e.submitter;
+  const target = submitter.dataset.target;
   const status = document.getElementById('status');
-  btn.disabled = true;
+  document.getElementById('btnDetail').disabled = true;
+  document.getElementById('btnSummary').disabled = true;
   status.className = 'text-base min-h-[20px] text-zinc-500';
   status.textContent = 'กำลังสร้างรายงาน กรุณารอสักครู่...';
 
   try {
     const formData = new FormData(e.target);
-    const res = await fetch(`${APP_ROOT}/generate_purchases`, { method: 'POST', body: formData });
+    const res = await fetch(target, { method: 'POST', body: formData });
     if (!res.ok) {
       const text = await res.text();
       status.className = 'text-base min-h-[20px] text-red-600';
@@ -79,7 +87,8 @@ document.getElementById('purchaseForm').addEventListener('submit', async (e) => 
     status.className = 'text-base min-h-[20px] text-red-600';
     status.textContent = 'เกิดข้อผิดพลาด: ' + err;
   } finally {
-    btn.disabled = false;
+    document.getElementById('btnDetail').disabled = false;
+    document.getElementById('btnSummary').disabled = false;
   }
 });
 </script>

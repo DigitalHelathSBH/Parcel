@@ -190,7 +190,7 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
 
     for category, cdf in df.groupby("PurchaseCategory", sort=False):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
-        catcell = ws.cell(row, 1, f"ประเภท: {category}")
+        catcell = ws.cell(row, 1, category)
         catcell.font = Font(name=THAI_FONT, size=16, bold=True, color="FFFFFF")
         catcell.fill = _CATEGORY_FILL
         catcell.alignment = Alignment(horizontal="left", vertical="center")
@@ -257,6 +257,112 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
         row += 2
 
         grand_count += cat_po_count
+        grand_total += cat_total
+
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols - 1)
+    gcell = ws.cell(row, 1, f"รวมทั้งสิ้น ({grand_count} ใบสั่งซื้อ)")
+    gcell.font = Font(name=THAI_FONT, size=14, bold=True)
+    gcell.alignment = Alignment(horizontal="right")
+    gc2 = ws.cell(row, n_cols, grand_total)
+    gc2.font = Font(name=THAI_FONT, size=14, bold=True)
+    gc2.number_format = "#,##0.00"
+    gc2.alignment = Alignment(horizontal="right")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+_SUMMARY_COLUMNS = ["ที่", "เลขที่ใบสั่งซื้อ/ใบแจ้งหนี้", "วันที่", "ผู้ขาย", "จำนวนรายการ", "เงินรวมสุทธิ"]
+_SUMMARY_WIDTHS = [6, 20, 14, 34, 14, 16]
+
+
+def build_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
+    month_label = THAI_MONTHS[calendar_month]
+    fiscal_be = calendar_year + 543
+    n_cols = len(_SUMMARY_COLUMNS)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "สรุปรายงานซื้อประจำเดือน"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    for i, w in enumerate(_SUMMARY_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    c = ws.cell(1, 1, "รายงานสรุปผลการจัดซื้อจัดจ้างในรอบเดือน (สรุปตามใบสั่งซื้อ)")
+    c.font = Font(name=THAI_FONT, size=16, bold=True)
+    c.alignment = Alignment(horizontal="center")
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    c2 = ws.cell(2, 1, f"ประจำเดือน{month_label} {fiscal_be}")
+    c2.font = Font(name=THAI_FONT, size=13)
+    c2.alignment = Alignment(horizontal="center")
+
+    row = 4
+    if df.empty:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+        ws.cell(row, 1, "ไม่พบข้อมูลตามเงื่อนไขที่เลือก")
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    po_agg = df.groupby(["PONO", "PODateThai", "VendorLabel", "PurchaseCategory"], sort=False).agg(
+        ItemCount=("STOCKCODE", "count"),
+        NetTotal=("NetAmt", "sum"),
+    ).reset_index()
+
+    grand_count = 0
+    grand_total = 0.0
+
+    for category, cdf in po_agg.groupby("PurchaseCategory", sort=False):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+        catcell = ws.cell(row, 1, category)
+        catcell.font = Font(name=THAI_FONT, size=16, bold=True, color="FFFFFF")
+        catcell.fill = _CATEGORY_FILL
+        catcell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[row].height = 26
+        row += 1
+
+        for col_idx, label in enumerate(_SUMMARY_COLUMNS, start=1):
+            cell = ws.cell(row, col_idx, label)
+            cell.font = Font(name=THAI_FONT, size=12, bold=True)
+            cell.fill = _HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", wrap_text=True)
+            cell.border = _BORDER
+        row += 1
+
+        cat_total = 0.0
+        for i, (_, r) in enumerate(cdf.iterrows(), start=1):
+            values = [i, r["PONO"], r["PODateThai"], r["VendorLabel"], r["ItemCount"], r["NetTotal"]]
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws.cell(row, col_idx, value)
+                cell.font = Font(name=THAI_FONT, size=12)
+                cell.border = _BORDER
+                if col_idx == 6:
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(horizontal="right")
+                elif col_idx in (1, 5):
+                    cell.alignment = Alignment(horizontal="center")
+            cat_total += float(r["NetTotal"])
+            row += 1
+
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols - 1)
+        subtotal_cell = ws.cell(row, 1, f"รวม {category} ({len(cdf)} ใบสั่งซื้อ)")
+        subtotal_cell.font = Font(name=THAI_FONT, size=13, bold=True)
+        subtotal_cell.alignment = Alignment(horizontal="right")
+        sc = ws.cell(row, n_cols, cat_total)
+        sc.font = Font(name=THAI_FONT, size=13, bold=True)
+        sc.number_format = "#,##0.00"
+        sc.alignment = Alignment(horizontal="right")
+        row += 2
+
+        grand_count += len(cdf)
         grand_total += cat_total
 
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols - 1)
