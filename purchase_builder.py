@@ -27,16 +27,28 @@ from depreciation_builder import (
 )
 
 
-def _classify_category(stockactname: str) -> str:
-    """แยกประเภทค่าใช้จ่ายจากชื่อรหัสบัญชี (StockActView.stockactname)"""
-    if not stockactname:
-        return "(ไม่ระบุประเภท)"
-    name = stockactname
+_DRUG_MAINCATEGORIES = {
+    "ยาในบัญชียาหลัก (ED)", "ยานอกบัญชียาหลัก (NE)",
+    "ยากรณีพิเศษ ในบัญชียาหลักแห่งชาติ", "ยากรณีพิเศษ นอกบัญชียาหลักแห่งชาติ", "ยาอื่นๆ",
+}
+_MATERIAL_MAINCATEGORIES = {
+    "วัสดุ", "เวชภัณฑ์ที่มิใช่ยา", "วัสดุการแพทย์ (MS)", "น้ำยาห้องปฏิบัติการ (LAB)",
+    "สารเคมีห้องปฏิบัติการ", "วัสดุการแพทย์ทันตกรรม",
+}
+
+
+def _classify_category(stockactname: str, maincategoryname: str) -> str:
+    """
+    แยกประเภทค่าใช้จ่าย - ก่อนอื่นดูชื่อรหัสบัญชี (StockActView.stockactname) ซึ่งบอกประเภทชัดเจนที่สุด
+    แต่บางรหัสเป็นรหัสกลางๆ ไม่บอกประเภท (เช่น "ซื้อรวมภาษี(วิธีเฉพาะเจาะจง)") จึง fallback ไปดู
+    หมวดของตัววัสดุเอง (STOCK_MASTER.MAINCATEGORY ผ่าน StockMainCategory) แทน
+    """
+    name = stockactname or ""
     if "ต่ำกว่าเกณฑ์" in name:
         return "ครุภัณฑ์ต่ำกว่าเกณฑ์"
     if "ซ่อมแซม" in name:
         return "ค่าซ่อมแซม"
-    if "จ้างเหมาบริการ" in name:
+    if "จ้างเหมา" in name:
         return "ค่าจ้างเหมาบริการ"
     if "ครุภัณฑ์" in name:
         if "คอมพิวเตอร์" in name:
@@ -52,6 +64,18 @@ def _classify_category(stockactname: str) -> str:
         return "ค่าสาธารณูปโภค"
     if "เบ็ดเตล็ด" in name:
         return "ค่าใช้จ่ายเบ็ดเตล็ด"
+
+    mc = maincategoryname or ""
+    if mc in _DRUG_MAINCATEGORIES:
+        return "ยา"
+    if mc in _MATERIAL_MAINCATEGORIES:
+        return "วัสดุ"
+    if mc == "ครุภัณฑ์":
+        return "ครุภัณฑ์อื่นๆ"
+    if mc == "งานจ้าง":
+        return "ค่าจ้างเหมาบริการ"
+    if mc == "ค่าสาธารณูปโภค":
+        return "ค่าสาธารณูปโภค"
     return "(ไม่ระบุประเภท)"
 
 
@@ -77,6 +101,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
         dt.UNITCODE,
         dt.STOCKACTCODE,
         sav.stockactname AS StockActName,
+        smc.MainCategoryName,
         dt.REQUESTQTY,
         dt.LOTPRICE,
         dt.AMT,
@@ -89,6 +114,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     LEFT JOIN SYSCONFIG bg ON bg.CODE = po.PURCHASEBUDGETCODE AND bg.CTRLCODE = 120010
     LEFT JOIN STOCK_MASTER sm ON sm.STOCKCODE = dt.STOCKCODE
     LEFT JOIN StockActView sav ON sav.stockactcode = dt.STOCKACTCODE
+    LEFT JOIN StockMainCategory smc ON smc.MainCategory = sm.MAINCATEGORY
     WHERE po.ISSUEDATETIME >= ? AND po.ISSUEDATETIME < ?
       AND po.CXLDATETIME IS NULL
     ORDER BY po.ISSUEDATETIME, po.PONO, dt.SUFFIX
@@ -103,7 +129,9 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     df["BudgetLabel"] = df["BudgetName"].fillna("(ไม่ระบุแหล่งเงิน)")
     df["ItemLabel"] = df["ItemName"].fillna(df["STOCKCODE"])
     df["NetAmt"] = df["GOODSAMTAFTERITEMDISCOUNT"].fillna(0.0) + df["ALLOCATEDVATAMT"].fillna(0.0)
-    df["PurchaseCategory"] = df["StockActName"].apply(_classify_category)
+    df["PurchaseCategory"] = df.apply(
+        lambda r: _classify_category(r["StockActName"], r["MainCategoryName"]), axis=1
+    )
     return df
 
 
