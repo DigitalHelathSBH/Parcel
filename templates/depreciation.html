@@ -48,6 +48,10 @@
           class="w-full rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
           รายงานสรุป ตามกลุ่มงาน (Excel)
         </button>
+        <button type="submit" id="btnSourceSummary" data-target="{{ url_for('generate_depreciation_source_summary') }}"
+          class="w-full rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
+          รายงานสรุป ตามแหล่งเงิน (ไม่แยกรายการ) (Excel)
+        </button>
       </div>
       <div class="text-base min-h-[20px]" id="status"></div>
     </form>
@@ -103,6 +107,7 @@ document.getElementById('depreForm').addEventListener('submit', async (e) => {
   const status = document.getElementById('status');
   document.getElementById('btnDetail').disabled = true;
   document.getElementById('btnSummary').disabled = true;
+  document.getElementById('btnSourceSummary').disabled = true;
   status.className = 'text-base min-h-[20px] text-zinc-500';
   status.textContent = 'กำลังสร้างรายงาน กรุณารอสักครู่ (รายงานละเอียดอาจใช้เวลาสักครู่)...';
 
@@ -132,6 +137,7 @@ document.getElementById('depreForm').addEventListener('submit', async (e) => {
   } finally {
     document.getElementById('btnDetail').disabled = false;
     document.getElementById('btnSummary').disabled = false;
+    document.getElementById('btnSourceSummary').disabled = false;
   }
 });
 

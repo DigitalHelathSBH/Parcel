@@ -122,7 +122,8 @@ def fetch_depreciation_data(
         dbo.GetSSBName(bg.THAINAME) AS BudgetName,
         y.BFWVALUEDEPRE,
         {depre_cols},
-        dep.TOTALVALUEDEPRE AS AllTimeAccumDepre
+        dep.TOTALVALUEDEPRE AS AllTimeAccumDepre,
+        dep.DEPREPERCENT
     FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
     -- DEPREGROUP='1' = ขึ้นบัญชีสินทรัพย์ (depreciated); '2' items are below the
@@ -153,6 +154,9 @@ def fetch_depreciation_data(
     df.loc[~has_year_row, "AccumDepre"] = df.loc[~has_year_row, "AllTimeAccumDepre"].fillna(0.0)
     df["TotalValue"] = df["QTY"].fillna(0.0) * df["PRICE"].fillna(0.0)
     df["NetValue"] = df["TotalValue"] - df["AccumDepre"]
+    # ตัวเลข "อายุการใช้งาน" (ปี) ตามระเบียบพัสดุ - คงที่ต่อหมวดครุภัณฑ์ (DEPREPERCENT เป็นอัตรา
+    # เส้นตรงต่อปี เช่น 4% = 25 ปี, 12.5% = 8 ปี) เท่ากับสูตรในรายงานต้นฉบับ 100/DEPREPERCENT
+    df["UsefulLifeYears"] = (100.0 / df["DEPREPERCENT"].replace(0, pd.NA)).round()
     df["AcqDateThai"] = df["AcqDate"].apply(to_thai_date)
     df["BudgetLabel"] = df["BudgetName"].fillna("(ไม่ระบุแหล่งเงิน)")
     df["ArticleGroupLabel"] = (
@@ -287,6 +291,123 @@ def build_detail_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_mont
         c.font = Font(name=THAI_FONT, size=14, bold=True)
         c.number_format = "#,##0.00"
         c.alignment = Alignment(horizontal="right")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+_SOURCE_SUMMARY_COLUMNS = [
+    "แหล่งเงิน / ประเภท", "จำนวน", "มูลค่ารวม", "อายุการใช้งาน (ปี)",
+    "ค่าเสื่อมราคา ประจำปี", "ค่าเสื่อมราคา สะสม", "มูลค่าสุทธิ",
+]
+_SOURCE_SUMMARY_WIDTHS = [34, 10, 16, 14, 16, 16, 16]
+
+
+def build_source_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
+    asmst_year, _ = fiscal_year_and_column(calendar_year, calendar_month)
+    fiscal_be = fiscal_be_label(asmst_year)
+    month_label = THAI_MONTHS[calendar_month]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "สรุปตามแหล่งเงิน"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    n_cols = len(_SOURCE_SUMMARY_COLUMNS)
+    for i, w in enumerate(_SOURCE_SUMMARY_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    row = _sheet_header(ws, n_cols, "รายงานค่าเสื่อมราคา สรุปตามแหล่งเงิน", fiscal_be, month_label, None)
+
+    if df.empty:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+        ws.cell(row, 1, "ไม่พบข้อมูลตามเงื่อนไขที่เลือก")
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    for col_idx, label in enumerate(_SOURCE_SUMMARY_COLUMNS, start=1):
+        cell = ws.cell(row, col_idx, label)
+        cell.font = Font(name=THAI_FONT, size=13, bold=True)
+        cell.fill = _HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = _BORDER
+    row += 1
+
+    grand_count = 0
+    grand_value = 0.0
+    grand_year = 0.0
+    grand_accum = 0.0
+    grand_net = 0.0
+
+    for budget_label, bdf in df.groupby("BudgetLabel", sort=False):
+        agg = bdf.groupby("ArticleGroupLabel", sort=False).agg(
+            count=("ASSETCODE", "count"),
+            TotalValue=("TotalValue", "sum"),
+            UsefulLifeYears=("UsefulLifeYears", "first"),
+            DepreYearCum=("DepreYearCum", "sum"),
+            AccumDepre=("AccumDepre", "sum"),
+            NetValue=("NetValue", "sum"),
+        ).reset_index()
+
+        for _, r in agg.iterrows():
+            values = [
+                r["ArticleGroupLabel"], r["count"], r["TotalValue"], r["UsefulLifeYears"],
+                r["DepreYearCum"], r["AccumDepre"], r["NetValue"],
+            ]
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws.cell(row, col_idx, value)
+                cell.font = Font(name=THAI_FONT, size=12)
+                cell.border = _BORDER
+                if col_idx >= 3:
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(horizontal="right")
+                elif col_idx == 2:
+                    cell.alignment = Alignment(horizontal="center")
+            row += 1
+
+        sub_count = int(agg["count"].sum())
+        sub_value = float(agg["TotalValue"].sum())
+        sub_year = float(agg["DepreYearCum"].sum())
+        sub_accum = float(agg["AccumDepre"].sum())
+        sub_net = float(agg["NetValue"].sum())
+
+        tc = ws.cell(row, 1, f"รวม {budget_label}")
+        tc.font = Font(name=THAI_FONT, size=12, bold=True)
+        tc.fill = _GROUP_FILL
+        for col_idx, val in [
+            (2, sub_count), (3, sub_value), (5, sub_year), (6, sub_accum), (7, sub_net),
+        ]:
+            c = ws.cell(row, col_idx, val)
+            c.font = Font(name=THAI_FONT, size=12, bold=True)
+            c.fill = _GROUP_FILL
+            if col_idx != 2:
+                c.number_format = "#,##0.00"
+            c.alignment = Alignment(horizontal="right" if col_idx != 2 else "center")
+        ws.cell(row, 4).fill = _GROUP_FILL
+        row += 1
+
+        grand_count += sub_count
+        grand_value += sub_value
+        grand_year += sub_year
+        grand_accum += sub_accum
+        grand_net += sub_net
+
+    gcell = ws.cell(row, 1, "รวมทั้งสิ้น")
+    gcell.font = Font(name=THAI_FONT, size=14, bold=True)
+    for col_idx, val in [
+        (2, grand_count), (3, grand_value), (5, grand_year), (6, grand_accum), (7, grand_net),
+    ]:
+        c = ws.cell(row, col_idx, val)
+        c.font = Font(name=THAI_FONT, size=14, bold=True)
+        if col_idx != 2:
+            c.number_format = "#,##0.00"
+        c.alignment = Alignment(horizontal="right" if col_idx != 2 else "center")
 
     buf = io.BytesIO()
     wb.save(buf)

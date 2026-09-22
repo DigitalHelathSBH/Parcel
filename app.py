@@ -191,6 +191,22 @@ def generate_depreciation_summary():
     )
 
 
+@app.route("/generate_depreciation_source_summary", methods=["POST"])
+def generate_depreciation_source_summary():
+    year, month, division, dept, section = _read_depre_form()
+    df = db.fetch_depreciation_data(year, month, division=division, dept=dept, section=section)
+    if df.empty:
+        return "ไม่พบข้อมูลตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
+    excel_bytes = db.build_source_summary_excel_bytes(df, year, month)
+    filename = f"depre_source_summary_{year}-{month:02d}.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="127.0.0.1", port=port, debug=False)
