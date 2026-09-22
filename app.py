@@ -19,6 +19,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import depreciation_builder as db
+import disposal_builder as disp
 import low_value_builder as lv
 import purchase_builder as pb
 import report_builder as rb
@@ -199,6 +200,34 @@ def generate_depreciation_source_summary():
         return "ไม่พบข้อมูลตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
     excel_bytes = db.build_source_summary_excel_bytes(df, year, month)
     filename = f"depre_source_summary_{year}-{month:02d}.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/disposal")
+def disposal_page():
+    today = date.today()
+    return render_template("disposal.html", today_year=today.year, today_month=today.month)
+
+
+@app.route("/generate_disposal", methods=["POST"])
+def generate_disposal():
+    year = int(request.form.get("year"))
+    month = int(request.form.get("month"))
+    division = request.form.get("division") or None
+    dept = request.form.get("dept") or None
+    section = request.form.get("section") or None
+
+    df = disp.fetch_disposal_data(year, month, division=division, dept=dept, section=section)
+    if df.empty:
+        return "ไม่พบรายการตัดจำหน่ายตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
+
+    excel_bytes = disp.build_excel_bytes(df, year, month)
+    filename = f"disposal_detail_{year}-{month:02d}.xlsx"
     return send_file(
         BytesIO(excel_bytes),
         as_attachment=True,
