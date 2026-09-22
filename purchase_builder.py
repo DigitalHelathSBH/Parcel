@@ -1,12 +1,12 @@
 """
 รายงานซื้อประจำเดือน - ใช้เตรียมข้อมูลก่อนกรอกแบบ สขร.1
 ดึงจาก SKPO/SKPODTL (ใบสั่งซื้อจริงของระบบพัสดุ) ตามช่วงวันที่ออกใบสั่งซื้อ (ISSUEDATETIME)
-ในเดือนที่เลือก แต่ละใบสั่งซื้อแสดงเป็นหัวข้อ ตามด้วยตารางรายการย่อยแยกรายบรรทัด
+ในเดือนที่เลือก จัดกลุ่มตามประเภทค่าใช้จ่าย (จากชื่อรหัสบัญชี StockActView) แล้วตามด้วย
+ใบสั่งซื้อแต่ละใบ และตารางรายการย่อยแยกรายบรรทัดภายใต้ใบสั่งซื้อนั้น
 
 หมายเหตุ: "วิธีซื้อหรือจ้าง" มาจาก SKPO.PURCHASETYPECODE (SYSCONFIG CTRLCODE=100010)
 ซึ่งเป็นข้อมูลจริงที่ระบบเก็บไว้ (ไม่ใช่ช่องว่างให้กรอกเองเหมือนก่อนหน้านี้)
 """
-import calendar
 import io
 from datetime import date
 
@@ -16,7 +16,43 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
 from db_connection import run_query
-from depreciation_builder import THAI_FONT, THAI_MONTHS, _BORDER, _GROUP_FILL, _HEADER_FILL, to_thai_date
+from depreciation_builder import (
+    THAI_FONT,
+    THAI_MONTHS,
+    _BORDER,
+    _GROUP_FILL,
+    _HEADER_FILL,
+    _SUBGROUP_FILL,
+    to_thai_date,
+)
+
+
+def _classify_category(stockactname: str) -> str:
+    """แยกประเภทค่าใช้จ่ายจากชื่อรหัสบัญชี (StockActView.stockactname)"""
+    if not stockactname:
+        return "(ไม่ระบุประเภท)"
+    name = stockactname
+    if "ต่ำกว่าเกณฑ์" in name:
+        return "ครุภัณฑ์ต่ำกว่าเกณฑ์"
+    if "ซ่อมแซม" in name:
+        return "ค่าซ่อมแซม"
+    if "จ้างเหมาบริการ" in name:
+        return "ค่าจ้างเหมาบริการ"
+    if "ครุภัณฑ์" in name:
+        if "คอมพิวเตอร์" in name:
+            return "ครุภัณฑ์คอมพิวเตอร์"
+        if "การแพทย์" in name or "วิทยาศาสตร์" in name:
+            return "ครุภัณฑ์วิทยาศาสตร์และการแพทย์"
+        if "สำนักงาน" in name:
+            return "ครุภัณฑ์สำนักงาน"
+        return "ครุภัณฑ์อื่นๆ"
+    if "วัสดุ" in name:
+        return "วัสดุ"
+    if "สาธารณูปโภค" in name:
+        return "ค่าสาธารณูปโภค"
+    if "เบ็ดเตล็ด" in name:
+        return "ค่าใช้จ่ายเบ็ดเตล็ด"
+    return "(ไม่ระบุประเภท)"
 
 
 def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame:
@@ -39,6 +75,8 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
         dt.STOCKCODE,
         dbo.GetSSBName(sm.THAINAME) AS ItemName,
         dt.UNITCODE,
+        dt.STOCKACTCODE,
+        sav.stockactname AS StockActName,
         dt.REQUESTQTY,
         dt.LOTPRICE,
         dt.AMT,
@@ -50,6 +88,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     LEFT JOIN SYSCONFIG pt ON pt.CODE = po.PURCHASETYPECODE AND pt.CTRLCODE = 100010
     LEFT JOIN SYSCONFIG bg ON bg.CODE = po.PURCHASEBUDGETCODE AND bg.CTRLCODE = 120010
     LEFT JOIN STOCK_MASTER sm ON sm.STOCKCODE = dt.STOCKCODE
+    LEFT JOIN StockActView sav ON sav.stockactcode = dt.STOCKACTCODE
     WHERE po.ISSUEDATETIME >= ? AND po.ISSUEDATETIME < ?
       AND po.CXLDATETIME IS NULL
     ORDER BY po.ISSUEDATETIME, po.PONO, dt.SUFFIX
@@ -64,6 +103,7 @@ def fetch_purchase_data(calendar_year: int, calendar_month: int) -> pd.DataFrame
     df["BudgetLabel"] = df["BudgetName"].fillna("(ไม่ระบุแหล่งเงิน)")
     df["ItemLabel"] = df["ItemName"].fillna(df["STOCKCODE"])
     df["NetAmt"] = df["GOODSAMTAFTERITEMDISCOUNT"].fillna(0.0) + df["ALLOCATEDVATAMT"].fillna(0.0)
+    df["PurchaseCategory"] = df["StockActName"].apply(_classify_category)
     return df
 
 
@@ -108,49 +148,86 @@ def build_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int)
         buf.seek(0)
         return buf.getvalue()
 
-    po_index = 0
-    for (pono, issue_date, vendor, ptype), pdf in df.groupby(
-        ["PONO", "PODateThai", "VendorLabel", "PurchaseTypeLabel"], sort=False
-    ):
-        po_index += 1
-        po_total = float(pdf["AMT"].fillna(0.0).sum())
+    grand_count = 0
+    grand_total = 0.0
 
+    for category, cdf in df.groupby("PurchaseCategory", sort=False):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
-        header_text = (
-            f"{po_index}. เลขที่ใบสั่งซื้อ/ใบแจ้งหนี้ {pono}    วันที่ {issue_date}    "
-            f"ผู้ขาย {vendor}    วิธีซื้อหรือจ้าง {ptype}    จำนวนเงิน {po_total:,.2f} บาท"
-        )
-        hc = ws.cell(row, 1, header_text)
-        hc.font = Font(name=THAI_FONT, size=13, bold=True)
-        hc.fill = _GROUP_FILL
+        catcell = ws.cell(row, 1, category)
+        catcell.font = Font(name=THAI_FONT, size=15, bold=True)
+        catcell.fill = _GROUP_FILL
         row += 1
 
-        for col_idx, label in enumerate(_DETAIL_COLUMNS, start=1):
-            cell = ws.cell(row, col_idx, label)
-            cell.font = Font(name=THAI_FONT, size=11, bold=True)
-            cell.fill = _HEADER_FILL
-            cell.alignment = Alignment(horizontal="center", wrap_text=True)
-            cell.border = _BORDER
-        row += 1
+        cat_total = 0.0
+        cat_po_count = 0
 
-        for i, (_, r) in enumerate(pdf.iterrows(), start=1):
-            values = [
-                i, r["STOCKCODE"], r["ItemLabel"], r["UNITCODE"], r["BudgetLabel"],
-                r["REQUESTQTY"], r["LOTPRICE"], r["AMT"],
-                r["GOODSAMTAFTERITEMDISCOUNT"], r["ALLOCATEDVATAMT"], r["NetAmt"],
-            ]
-            for col_idx, value in enumerate(values, start=1):
-                cell = ws.cell(row, col_idx, value)
-                cell.font = Font(name=THAI_FONT, size=11)
-                cell.border = _BORDER
-                if col_idx >= 6:
-                    cell.number_format = "#,##0.00"
-                    cell.alignment = Alignment(horizontal="right")
-                elif col_idx == 1:
-                    cell.alignment = Alignment(horizontal="center")
+        po_index = 0
+        for (pono, issue_date, vendor, ptype), pdf in cdf.groupby(
+            ["PONO", "PODateThai", "VendorLabel", "PurchaseTypeLabel"], sort=False
+        ):
+            po_index += 1
+            cat_po_count += 1
+            po_total = float(pdf["AMT"].fillna(0.0).sum())
+            cat_total += po_total
+
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+            header_text = (
+                f"{po_index}. เลขที่ใบสั่งซื้อ/ใบแจ้งหนี้ {pono}    วันที่ {issue_date}    "
+                f"ผู้ขาย {vendor}    วิธีซื้อหรือจ้าง {ptype}    จำนวนเงิน {po_total:,.2f} บาท"
+            )
+            hc = ws.cell(row, 1, header_text)
+            hc.font = Font(name=THAI_FONT, size=13, bold=True)
+            hc.fill = _SUBGROUP_FILL
             row += 1
 
-        row += 1
+            for col_idx, label in enumerate(_DETAIL_COLUMNS, start=1):
+                cell = ws.cell(row, col_idx, label)
+                cell.font = Font(name=THAI_FONT, size=11, bold=True)
+                cell.fill = _HEADER_FILL
+                cell.alignment = Alignment(horizontal="center", wrap_text=True)
+                cell.border = _BORDER
+            row += 1
+
+            for i, (_, r) in enumerate(pdf.iterrows(), start=1):
+                values = [
+                    i, r["STOCKCODE"], r["ItemLabel"], r["UNITCODE"], r["BudgetLabel"],
+                    r["REQUESTQTY"], r["LOTPRICE"], r["AMT"],
+                    r["GOODSAMTAFTERITEMDISCOUNT"], r["ALLOCATEDVATAMT"], r["NetAmt"],
+                ]
+                for col_idx, value in enumerate(values, start=1):
+                    cell = ws.cell(row, col_idx, value)
+                    cell.font = Font(name=THAI_FONT, size=11)
+                    cell.border = _BORDER
+                    if col_idx >= 6:
+                        cell.number_format = "#,##0.00"
+                        cell.alignment = Alignment(horizontal="right")
+                    elif col_idx == 1:
+                        cell.alignment = Alignment(horizontal="center")
+                row += 1
+
+            row += 1
+
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols - 1)
+        subtotal_cell = ws.cell(row, 1, f"รวม {category} ({cat_po_count} ใบสั่งซื้อ)")
+        subtotal_cell.font = Font(name=THAI_FONT, size=13, bold=True)
+        subtotal_cell.alignment = Alignment(horizontal="right")
+        sc = ws.cell(row, n_cols, cat_total)
+        sc.font = Font(name=THAI_FONT, size=13, bold=True)
+        sc.number_format = "#,##0.00"
+        sc.alignment = Alignment(horizontal="right")
+        row += 2
+
+        grand_count += cat_po_count
+        grand_total += cat_total
+
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols - 1)
+    gcell = ws.cell(row, 1, f"รวมทั้งสิ้น ({grand_count} ใบสั่งซื้อ)")
+    gcell.font = Font(name=THAI_FONT, size=14, bold=True)
+    gcell.alignment = Alignment(horizontal="right")
+    gc2 = ws.cell(row, n_cols, grand_total)
+    gc2.font = Font(name=THAI_FONT, size=14, bold=True)
+    gc2.number_format = "#,##0.00"
+    gc2.alignment = Alignment(horizontal="right")
 
     buf = io.BytesIO()
     wb.save(buf)
