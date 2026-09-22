@@ -27,7 +27,9 @@ def fetch_low_value_data(as_of_date, division=None, dept=None, section=None) -> 
     conditions = [
         "cm.PRICE < ?",
         "cm.ACQDATETIME <= ?",
-        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # a genuine disposal needs BOTH fields; if either is missing (e.g. a transfer
+        # cleared DISPOSCODE but left a stale DISPOSDATETIME behind) treat as not disposed
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
     ]
     params = [LOW_VALUE_THRESHOLD, as_of_date, as_of_date]
 

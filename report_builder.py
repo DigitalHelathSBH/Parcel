@@ -106,7 +106,9 @@ def fetch_asset_data(
     apply_depre_filter: bool = False,
 ) -> pd.DataFrame:
     conditions = [
-        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # a genuine disposal needs BOTH fields; if either is missing (e.g. a transfer
+        # cleared DISPOSCODE but left a stale DISPOSDATETIME behind) treat as not disposed
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
         "cm.ACQDATETIME <= ?",
     ]
     params = [as_of_date, as_of_date]

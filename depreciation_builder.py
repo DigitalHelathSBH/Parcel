@@ -77,9 +77,10 @@ def fetch_depreciation_data(
     as_of_date = date(calendar_year, calendar_month, last_day)
 
     conditions = [
-        # a few rows have DISPOSCODE set with no DISPOSDATETIME (incomplete disposal
-        # entries) - only an actual dated disposal on/before the report date excludes it
-        "(cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
+        # a genuine disposal needs BOTH DISPOSCODE and DISPOSDATETIME; if either is
+        # missing (e.g. a transfer cleared DISPOSCODE but left a stale DISPOSDATETIME
+        # behind, or vice versa) treat the asset as not disposed
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
         # don't show assets acquired after the report's as-of month
         "cm.ACQDATETIME <= ?",
     ]
