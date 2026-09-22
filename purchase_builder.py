@@ -393,12 +393,16 @@ def _to_thai_date_short(value) -> str:
     return f"{ts.day} {_THAI_MONTHS_ABBR[ts.month]} {(ts.year + 543) % 100:02d}"
 
 
+# คอลัมน์สุดท้าย 2 อัน (วันที่, เลขที่) ใช้หัวข้อร่วมกัน "เลขที่และวันที่ของสัญญาหรือข้อตกลง" (merge)
 _SAKOR_COLUMNS = [
     "ลำดับที่", "งานที่จัดซื้อหรือจัดจ้าง", "วงเงินที่จะซื้อหรือจ้าง", "ราคากลาง",
     "วิธีซื้อหรือจ้าง", "รายชื่อผู้เสนอราคา", "ราคาที่เสนอ", "ผู้ได้รับการคัดเลือก",
-    "ราคาที่ตกลงซื้อหรือจ้าง", "เหตุผลที่คัดเลือกโดยสรุป", "เลขที่และวันที่ของสัญญาหรือข้อตกลง",
+    "ราคาที่ตกลงซื้อหรือจ้าง", "เหตุผลที่คัดเลือกโดยสรุป", "วันที่", "เลขที่",
 ]
-_SAKOR_WIDTHS = [6, 26, 14, 14, 16, 24, 14, 24, 14, 30, 18]
+_SAKOR_WIDTHS = [6, 26, 14, 14, 16, 24, 14, 24, 14, 30, 14, 14]
+_SAKOR_CONTRACT_HEADER = "เลขที่และวันที่ของสัญญาหรือข้อตกลง"
+_SAKOR_REASON_TEXT = "เป็นผู้มีคุณสมบัติถูกต้องตามเงื่อนไขในการตกลงราคา"
+_SAKOR_EBIDDING_THRESHOLD = 500000
 
 
 def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
@@ -439,16 +443,24 @@ def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month
         buf.seek(0)
         return buf.getvalue()
 
-    for col_idx, label in enumerate(_SAKOR_COLUMNS, start=1):
+    for col_idx, label in enumerate(_SAKOR_COLUMNS[:-2], start=1):
         cell = ws.cell(row, col_idx, label)
         cell.font = Font(name=THAI_FONT, size=12, bold=True)
         cell.fill = _HEADER_FILL
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
         cell.border = _BORDER
+
+    ws.merge_cells(start_row=row, start_column=n_cols - 1, end_row=row, end_column=n_cols)
+    contract_header = ws.cell(row, n_cols - 1, _SAKOR_CONTRACT_HEADER)
+    contract_header.font = Font(name=THAI_FONT, size=12, bold=True)
+    contract_header.fill = _HEADER_FILL
+    contract_header.alignment = Alignment(horizontal="center", wrap_text=True)
+    contract_header.border = _BORDER
+    ws.cell(row, n_cols).border = _BORDER
     row += 1
 
     po_groups = df.groupby(
-        ["PONO", "ISSUEDATETIME", "PODateThai", "VendorLabel", "PurchaseTypeLabel", "PurchaseCategory"],
+        ["PONO", "ISSUEDATETIME", "VendorLabel", "PurchaseCategory"],
         sort=False,
     )
     po_agg = po_groups.agg(
@@ -464,15 +476,16 @@ def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month
         else:
             work_desc = r["FirstItemName"]
 
-        # "วิธีซื้อหรือจ้าง" จากฐานข้อมูล (SKPO.PURCHASETYPECODE) ไม่น่าเชื่อถือพอจะอนุมานเหตุผล
-        # การคัดเลือกอัตโนมัติได้ (พบว่าบางค่าเป็นชื่อหน่วยงานแทนวิธีจัดซื้อจริง) - เว้นว่างให้กรอกเอง
-        reason = ""
-        contract_ref = f"{r['PONO']}\n{_to_thai_date_short(r['ISSUEDATETIME'])}"
+        # "วิธีซื้อหรือจ้าง" กำหนดจากวงเงินที่ตกลงซื้อ/จ้างตามเกณฑ์ที่หน่วยงานระบุ ไม่ใช้
+        # SKPO.PURCHASETYPECODE เพราะพบว่าไม่น่าเชื่อถือ (บางค่าเป็นชื่อหน่วยงานแทนวิธีจัดซื้อจริง)
+        net_total = float(r["NetTotal"])
+        purchase_method = "e-bidding" if net_total >= _SAKOR_EBIDDING_THRESHOLD else "วิธีเฉพาะเจาะจง"
 
         values = [
-            i + 1, work_desc, r["NetTotal"], r["NetTotal"],
-            r["PurchaseTypeLabel"], r["VendorLabel"], r["NetTotal"], r["VendorLabel"],
-            r["NetTotal"], reason, contract_ref,
+            i + 1, work_desc, net_total, net_total,
+            purchase_method, r["VendorLabel"], net_total, r["VendorLabel"],
+            net_total, _SAKOR_REASON_TEXT,
+            _to_thai_date_short(r["ISSUEDATETIME"]), r["PONO"],
         ]
         for col_idx, value in enumerate(values, start=1):
             cell = ws.cell(row, col_idx, value)
@@ -482,7 +495,7 @@ def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month
             if col_idx in (3, 4, 7, 9):
                 cell.number_format = "#,##0.00"
                 cell.alignment = Alignment(horizontal="right", vertical="center")
-            elif col_idx == 1:
+            elif col_idx in (1, 11, 12):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
         row += 1
 
