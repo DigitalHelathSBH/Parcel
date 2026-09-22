@@ -44,6 +44,10 @@
           class="w-full rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
           รายงานสรุปตามใบสั่งซื้อ (Excel)
         </button>
+        <button type="submit" id="btnSakor" data-target="{{ url_for('generate_purchases_sakor') }}"
+          class="w-full rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 transition disabled:bg-zinc-400 disabled:cursor-not-allowed">
+          แบบสรุปผลการจัดซื้อจัดจ้าง (สขร.1) (Excel)
+        </button>
       </div>
       <div class="text-base min-h-[20px]" id="status"></div>
     </form>
@@ -60,6 +64,7 @@ document.getElementById('purchaseForm').addEventListener('submit', async (e) => 
   const status = document.getElementById('status');
   document.getElementById('btnDetail').disabled = true;
   document.getElementById('btnSummary').disabled = true;
+  document.getElementById('btnSakor').disabled = true;
   status.className = 'text-base min-h-[20px] text-zinc-500';
   status.textContent = 'กำลังสร้างรายงาน กรุณารอสักครู่...';
 
@@ -89,6 +94,7 @@ document.getElementById('purchaseForm').addEventListener('submit', async (e) => 
   } finally {
     document.getElementById('btnDetail').disabled = false;
     document.getElementById('btnSummary').disabled = false;
+    document.getElementById('btnSakor').disabled = false;
   }
 });
 </script>

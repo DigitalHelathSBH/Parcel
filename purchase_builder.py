@@ -378,3 +378,116 @@ def build_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_mon
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
+
+_THAI_MONTHS_ABBR = [
+    "", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+]
+
+
+def _to_thai_date_short(value) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    ts = pd.Timestamp(value)
+    return f"{ts.day} {_THAI_MONTHS_ABBR[ts.month]} {(ts.year + 543) % 100:02d}"
+
+
+_SAKOR_REASON_SPECIFIC = "เป็นผู้มีคุณสมบัติถูกต้องตามเงื่อนไขในการตกลงราคา"
+
+_SAKOR_COLUMNS = [
+    "ลำดับที่", "งานที่จัดซื้อหรือจัดจ้าง", "วงเงินที่จะซื้อหรือจ้าง", "ราคากลาง",
+    "วิธีซื้อหรือจ้าง", "รายชื่อผู้เสนอราคา", "ราคาที่เสนอ", "ผู้ได้รับการคัดเลือก",
+    "ราคาที่ตกลงซื้อหรือจ้าง", "เหตุผลที่คัดเลือกโดยสรุป", "เลขที่และวันที่ของสัญญาหรือข้อตกลง",
+]
+_SAKOR_WIDTHS = [6, 26, 14, 14, 16, 24, 14, 24, 14, 30, 18]
+
+
+def build_sakor_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
+    """
+    แบบสรุปผลการดำเนินการจัดซื้อจัดจ้างในรอบเดือน (แบบ สขร.1) - รายการเรียงตามวันที่ ไม่แบ่งกลุ่มตามประเภท
+    เพราะแบบฟอร์มราชการนี้เป็นรายการต่อเนื่องตามลำดับเวลา ไม่ได้จัดกลุ่มตามหมวดหมู่
+    """
+    month_label = THAI_MONTHS[calendar_month]
+    fiscal_be = calendar_year + 543
+    n_cols = len(_SAKOR_COLUMNS)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "สขร.1"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    for i, w in enumerate(_SAKOR_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    c = ws.cell(1, 1, f"แบบสรุปผลการดำเนินการจัดซื้อจัดจ้างในรอบเดือน {month_label} {fiscal_be}")
+    c.font = Font(name=THAI_FONT, size=16, bold=True)
+    c.alignment = Alignment(horizontal="center")
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    c2 = ws.cell(2, 1, "โรงพยาบาลสระบุรี")
+    c2.font = Font(name=THAI_FONT, size=13)
+    c2.alignment = Alignment(horizontal="center")
+
+    row = 4
+    if df.empty:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
+        ws.cell(row, 1, "ไม่พบข้อมูลตามเงื่อนไขที่เลือก")
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue()
+
+    for col_idx, label in enumerate(_SAKOR_COLUMNS, start=1):
+        cell = ws.cell(row, col_idx, label)
+        cell.font = Font(name=THAI_FONT, size=12, bold=True)
+        cell.fill = _HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = _BORDER
+    row += 1
+
+    po_groups = df.groupby(
+        ["PONO", "ISSUEDATETIME", "PODateThai", "VendorLabel", "PurchaseTypeLabel", "PurchaseCategory"],
+        sort=False,
+    )
+    po_agg = po_groups.agg(
+        ItemCount=("STOCKCODE", "nunique"),
+        NetTotal=("NetAmt", "sum"),
+        FirstItemName=("ItemLabel", "first"),
+    ).reset_index()
+    po_agg = po_agg.sort_values("ISSUEDATETIME", kind="stable").reset_index(drop=True)
+
+    for i, r in po_agg.iterrows():
+        if r["ItemCount"] > 1:
+            work_desc = f"{r['PurchaseCategory']} {r['ItemCount']} รายการ"
+        else:
+            work_desc = r["FirstItemName"]
+
+        is_specific = "เฉพาะเจาะจง" in (r["PurchaseTypeLabel"] or "")
+        reason = _SAKOR_REASON_SPECIFIC if is_specific else ""
+        contract_ref = f"{r['PONO']}\n{_to_thai_date_short(r['ISSUEDATETIME'])}"
+
+        values = [
+            i + 1, work_desc, r["NetTotal"], r["NetTotal"],
+            r["PurchaseTypeLabel"], r["VendorLabel"], r["NetTotal"], r["VendorLabel"],
+            r["NetTotal"], reason, contract_ref,
+        ]
+        for col_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row, col_idx, value)
+            cell.font = Font(name=THAI_FONT, size=11)
+            cell.border = _BORDER
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            if col_idx in (3, 4, 7, 9):
+                cell.number_format = "#,##0.00"
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            elif col_idx == 1:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+        row += 1
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()

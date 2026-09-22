@@ -170,6 +170,25 @@ def generate_purchases_summary():
     )
 
 
+@app.route("/generate_purchases_sakor", methods=["POST"])
+def generate_purchases_sakor():
+    year = int(request.form.get("year"))
+    month = int(request.form.get("month"))
+
+    df = pb.fetch_purchase_data(year, month)
+    if df.empty:
+        return "ไม่พบรายการจัดซื้อในเดือนที่เลือก กรุณาลองเดือนอื่น", 400
+
+    excel_bytes = pb.build_sakor_excel_bytes(df, year, month)
+    filename = f"sakor1_{year}-{month:02d}.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 def _read_depre_form():
     year = int(request.form.get("year"))
     month = int(request.form.get("month"))
