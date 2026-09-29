@@ -101,13 +101,16 @@ def fetch_depreciation_data(
         params.append(section)
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-    depre_sum_cols = ", ".join(f"SUM(DEPREAMT{i}) AS DEPREAMT{i}" for i in range(1, 13))
+    # SUM(DISTINCT ...) ไม่ใช่ SUM ธรรมดา: ถ้าครุภัณฑ์ถูกโอนย้ายข้ามหน่วยงาน (GLDEPT) กลางปี
+    # ASMSTYEAR จะมีหลายแถวต่อปีเดียวกัน บางครั้งเป็นการ "ปันส่วน" จริง (ค่าแต่ละแถวต่างกัน คงบวกตามปกติ)
+    # แต่บางครั้งเป็นข้อมูลซ้ำเป๊ะ (ทุกแถวค่าเท่ากันทุกตัว) ซึ่งถ้าบวกตรงๆ จะได้ยอดเบิ้ล ทำให้มูลค่าสุทธิติดลบ
+    # (พบจริง 2,261 รายการทั้งฐานข้อมูล) SUM(DISTINCT) ทำให้ค่าที่ซ้ำเป๊ะถูกนับครั้งเดียว โดยไม่กระทบ
+    # กรณีปันส่วนจริงที่ค่าต่างกัน
+    depre_sum_cols = ", ".join(f"SUM(DISTINCT DEPREAMT{i}) AS DEPREAMT{i}" for i in range(1, 13))
 
-    # ASMSTYEAR เก็บแยกได้หลายแถวต่อ ASSETCODE+SUFFIX+YEAR ถ้าค่าเสื่อมถูกปันส่วนข้าม GLDEPT
-    # (พบ 13 รายการจากทั้งหมดหมื่นกว่ารายการ) ต้องรวมยอดก่อน join ไม่งั้นจะได้แถวซ้ำ
     sql = f"""
     WITH YearAgg AS (
-        SELECT ASSETCODE, SUFFIX, SUM(BFWVALUEDEPRE) AS BFWVALUEDEPRE, {depre_sum_cols}
+        SELECT ASSETCODE, SUFFIX, SUM(DISTINCT BFWVALUEDEPRE) AS BFWVALUEDEPRE, {depre_sum_cols}
         FROM ASMSTYEAR
         WHERE YEAR = ?
         GROUP BY ASSETCODE, SUFFIX
@@ -128,7 +131,8 @@ def fetch_depreciation_data(
         y.BFWVALUEDEPRE,
         {depre_cols},
         dep.TOTALVALUEDEPRE AS AllTimeAccumDepre,
-        dep.DEPREPERCENT
+        dep.DEPREPERCENT,
+        dep.SCRAPVALUE
     FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
     -- DEPREGROUP='1' = ขึ้นบัญชีสินทรัพย์ (depreciated); '2' items are below the
@@ -158,6 +162,11 @@ def fetch_depreciation_data(
     df["AccumDepre"] = df["BFWVALUEDEPRE"].fillna(0.0) + df["DepreYearCum"]
     df.loc[~has_year_row, "AccumDepre"] = df.loc[~has_year_row, "AllTimeAccumDepre"].fillna(0.0)
     df["TotalValue"] = df["QTY"].fillna(0.0) * df["PRICE"].fillna(0.0)
+    # กันไว้อีกชั้น: มูลค่าสุทธิต้องไม่ต่ำกว่ามูลค่าซาก (scrap value) ตามหลักบัญชี - บางรายการ
+    # ตัวเลขสะสมในฐานข้อมูลต้นทาง (ASMSTDEP.TOTALVALUEDEPRE) ผิดเกินราคาทรัพย์สินไปแล้วเอง
+    # (ไม่ใช่จากการคำนวณของเรา) ซึ่งแก้ที่ต้นทางไม่ได้ จึงครอบเพดานสะสมไว้ไม่ให้เกินตรงนี้แทน
+    scrap_value = df["SCRAPVALUE"].fillna(1.0)
+    df["AccumDepre"] = df["AccumDepre"].clip(upper=df["TotalValue"] - scrap_value)
     df["NetValue"] = df["TotalValue"] - df["AccumDepre"]
     # ตัวเลข "อายุการใช้งาน" (ปี) ตามระเบียบพัสดุ - คงที่ต่อหมวดครุภัณฑ์ (DEPREPERCENT เป็นอัตรา
     # เส้นตรงต่อปี เช่น 4% = 25 ปี, 12.5% = 8 ปี) เท่ากับสูตรในรายงานต้นฉบับ 100/DEPREPERCENT
