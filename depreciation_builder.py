@@ -131,7 +131,8 @@ def fetch_depreciation_data(
         y.BFWVALUEDEPRE,
         {depre_cols},
         dep.TOTALVALUEDEPRE AS AllTimeAccumDepre,
-        dep.DEPREPERCENT
+        dep.DEPREPERCENT,
+        dep.SCRAPVALUE
     FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
     -- DEPREGROUP='1' = ขึ้นบัญชีสินทรัพย์ (depreciated); '2' items are below the
@@ -164,6 +165,12 @@ def fetch_depreciation_data(
     # ไม่ครอบเพดานมูลค่าสุทธิไว้ที่มูลค่าซากอีกต่อไป - เคยลองทำแล้วพบว่ามันกลบตัวเลขที่ผิดจริง
     # (ค่าเสื่อมรายเดือนในฐานข้อมูลต้นทางผิด เช่น ตั้งไว้ตามราคาเดิมก่อนแก้ไขราคาทรัพย์สิน) ให้ดูเหมือน
     # ถูกต้อง (1 บาทเป๊ะ) ทั้งที่ค่าจริงควรเป็นเลขอื่น ปล่อยให้ติดลบให้เห็นชัดแทน จะได้ไปแก้ที่ต้นทาง
+    #
+    # แต่ถ้าใกล้เคียงมูลค่าซากมากๆ (ภายใน 5 สตางค์ เช่น 0.99 แทนที่จะเป็น 1.00) เป็นแค่เศษปัดเลข
+    # จากราคาทรัพย์สินที่มีทศนิยม ไม่ใช่ค่าเสื่อมผิดจริง - ปัดให้เท่ากับมูลค่าซากพอดี
+    scrap_value = df["SCRAPVALUE"].fillna(1.0)
+    near_scrap = (df["TotalValue"] - df["AccumDepre"] - scrap_value).abs() <= 0.05
+    df.loc[near_scrap, "AccumDepre"] = df.loc[near_scrap, "TotalValue"] - scrap_value[near_scrap]
     df["NetValue"] = df["TotalValue"] - df["AccumDepre"]
     # ตัวเลข "อายุการใช้งาน" (ปี) ตามระเบียบพัสดุ - คงที่ต่อหมวดครุภัณฑ์ (DEPREPERCENT เป็นอัตรา
     # เส้นตรงต่อปี เช่น 4% = 25 ปี, 12.5% = 8 ปี) เท่ากับสูตรในรายงานต้นฉบับ 100/DEPREPERCENT
