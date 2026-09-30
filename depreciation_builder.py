@@ -106,11 +106,17 @@ def fetch_depreciation_data(
     # แต่บางครั้งเป็นข้อมูลซ้ำเป๊ะ (ทุกแถวค่าเท่ากันทุกตัว) ซึ่งถ้าบวกตรงๆ จะได้ยอดเบิ้ล ทำให้มูลค่าสุทธิติดลบ
     # (พบจริง 2,261 รายการทั้งฐานข้อมูล) SUM(DISTINCT) ทำให้ค่าที่ซ้ำเป๊ะถูกนับครั้งเดียว โดยไม่กระทบ
     # กรณีปันส่วนจริงที่ค่าต่างกัน
+    #
+    # BFWVALUEDEPRE ("ยกมาต้นปี") ต่างจาก DEPREAMT: เมื่อโอนย้ายกลางปีจริง แถวหลังการโอนจะเก็บ
+    # BFWVALUEDEPRE เป็นยอดสะสม ณ จุดโอน (รวมของแถวก่อนหน้าไปแล้ว) ไม่ใช่คนละก้อนที่ต้องบวกเพิ่ม -
+    # ถ้าใช้ SUM(DISTINCT) จะบวกยอดสะสมซ้ำ (พบจริงเช่น 7440-001-0001/1191 ที่โอนย้าย GLDEPT กลางปี
+    # 2569 ทำให้ยอดสะสมเบิ้ล) ใช้ MIN() แทน เพื่อเอาเฉพาะยอดยกมาต้นปีจริงของแถวแรกสุด (กรณีซ้ำเป๊ะ
+    # MIN ก็ให้ผลเหมือน SUM(DISTINCT) เพราะมีค่าเดียว)
     depre_sum_cols = ", ".join(f"SUM(DISTINCT DEPREAMT{i}) AS DEPREAMT{i}" for i in range(1, 13))
 
     sql = f"""
     WITH YearAgg AS (
-        SELECT ASSETCODE, SUFFIX, SUM(DISTINCT BFWVALUEDEPRE) AS BFWVALUEDEPRE, {depre_sum_cols}
+        SELECT ASSETCODE, SUFFIX, MIN(BFWVALUEDEPRE) AS BFWVALUEDEPRE, {depre_sum_cols}
         FROM ASMSTYEAR
         WHERE YEAR = ?
         GROUP BY ASSETCODE, SUFFIX
