@@ -131,8 +131,7 @@ def fetch_depreciation_data(
         y.BFWVALUEDEPRE,
         {depre_cols},
         dep.TOTALVALUEDEPRE AS AllTimeAccumDepre,
-        dep.DEPREPERCENT,
-        dep.SCRAPVALUE
+        dep.DEPREPERCENT
     FROM ASMSTCM cm
     JOIN ASMST m ON m.ASSETCODE = cm.ASSETCODE
     -- DEPREGROUP='1' = ขึ้นบัญชีสินทรัพย์ (depreciated); '2' items are below the
@@ -162,11 +161,9 @@ def fetch_depreciation_data(
     df["AccumDepre"] = df["BFWVALUEDEPRE"].fillna(0.0) + df["DepreYearCum"]
     df.loc[~has_year_row, "AccumDepre"] = df.loc[~has_year_row, "AllTimeAccumDepre"].fillna(0.0)
     df["TotalValue"] = df["QTY"].fillna(0.0) * df["PRICE"].fillna(0.0)
-    # กันไว้อีกชั้น: มูลค่าสุทธิต้องไม่ต่ำกว่ามูลค่าซาก (scrap value) ตามหลักบัญชี - บางรายการ
-    # ตัวเลขสะสมในฐานข้อมูลต้นทาง (ASMSTDEP.TOTALVALUEDEPRE) ผิดเกินราคาทรัพย์สินไปแล้วเอง
-    # (ไม่ใช่จากการคำนวณของเรา) ซึ่งแก้ที่ต้นทางไม่ได้ จึงครอบเพดานสะสมไว้ไม่ให้เกินตรงนี้แทน
-    scrap_value = df["SCRAPVALUE"].fillna(1.0)
-    df["AccumDepre"] = df["AccumDepre"].clip(upper=df["TotalValue"] - scrap_value)
+    # ไม่ครอบเพดานมูลค่าสุทธิไว้ที่มูลค่าซากอีกต่อไป - เคยลองทำแล้วพบว่ามันกลบตัวเลขที่ผิดจริง
+    # (ค่าเสื่อมรายเดือนในฐานข้อมูลต้นทางผิด เช่น ตั้งไว้ตามราคาเดิมก่อนแก้ไขราคาทรัพย์สิน) ให้ดูเหมือน
+    # ถูกต้อง (1 บาทเป๊ะ) ทั้งที่ค่าจริงควรเป็นเลขอื่น ปล่อยให้ติดลบให้เห็นชัดแทน จะได้ไปแก้ที่ต้นทาง
     df["NetValue"] = df["TotalValue"] - df["AccumDepre"]
     # ตัวเลข "อายุการใช้งาน" (ปี) ตามระเบียบพัสดุ - คงที่ต่อหมวดครุภัณฑ์ (DEPREPERCENT เป็นอัตรา
     # เส้นตรงต่อปี เช่น 4% = 25 ปี, 12.5% = 8 ปี) เท่ากับสูตรในรายงานต้นฉบับ 100/DEPREPERCENT
