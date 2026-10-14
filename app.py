@@ -277,6 +277,26 @@ def generate_disposal():
     )
 
 
+@app.route("/generate_disposal_summary", methods=["POST"])
+def generate_disposal_summary():
+    division = request.form.get("division") or None
+    dept = request.form.get("dept") or None
+    section = request.form.get("section") or None
+
+    df = disp.fetch_disposal_data(division=division, dept=dept, section=section)
+    if df.empty:
+        return "ไม่พบรายการตัดจำหน่ายตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
+
+    excel_bytes = disp.build_source_summary_excel_bytes(df)
+    filename = "disposal_source_summary_all.xlsx"
+    return send_file(
+        BytesIO(excel_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="127.0.0.1", port=port, debug=False)
