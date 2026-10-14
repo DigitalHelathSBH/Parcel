@@ -4,6 +4,7 @@
 แต่ตัดคอลัมน์ค่าเสื่อม/มูลค่าสุทธิออก แทนด้วยประเภทครุภัณฑ์ สถานะ (เหตุผลตัดจำหน่าย) และวันที่ตัดจำหน่าย
 """
 import io
+from datetime import date
 
 import pandas as pd
 from openpyxl import Workbook
@@ -13,10 +14,13 @@ from openpyxl.utils import get_column_letter
 from db_connection import run_query
 from depreciation_builder import (
     THAI_FONT,
+    THAI_MONTHS,
     _BORDER,
     _GROUP_FILL,
     _HEADER_FILL,
     _SUBGROUP_FILL,
+    fiscal_be_label,
+    fiscal_year_and_column,
     to_thai_date,
 )
 
@@ -223,11 +227,18 @@ def build_source_summary_excel_bytes(df: pd.DataFrame) -> bytes:
     c.font = Font(name=THAI_FONT, size=18, bold=True)
     c.alignment = Alignment(horizontal="center")
 
+    today = date.today()
+    asmst_year, _ = fiscal_year_and_column(today.year, today.month)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
-    c2 = ws.cell(2, 1, "รายการที่ตัดจำหน่ายแล้วทั้งหมด")
+    c2 = ws.cell(2, 1, f"รายงานทรัพย์สิน ณ สิ้นเดือน{THAI_MONTHS[today.month]} {fiscal_be_label(asmst_year)}")
     c2.font = Font(name=THAI_FONT, size=13)
     c2.alignment = Alignment(horizontal="center")
-    row = 4
+
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
+    c3 = ws.cell(3, 1, "รายการที่ตัดจำหน่ายแล้วทั้งหมด")
+    c3.font = Font(name=THAI_FONT, size=13)
+    c3.alignment = Alignment(horizontal="center")
+    row = 5
 
     if df.empty:
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
