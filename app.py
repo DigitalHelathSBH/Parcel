@@ -192,6 +192,9 @@ def generate_purchases_sakor():
 def _read_depre_form():
     year = int(request.form.get("year"))
     month = int(request.form.get("month"))
+    # ถ้าเดือนที่เลือกยังไม่มีค่าเสื่อมที่ปิดงวด (เช่น เพิ่งขึ้นปีงบใหม่ ต.ค. ระบบต้นทางยัง
+    # ไม่รันให้) ถอยไปแสดงเดือนล่าสุดที่มีข้อมูลจริงแทน แจ้งผู้ใช้เผื่อเดือนที่ได้ไม่ตรงกับที่เลือก
+    year, month = db.resolve_reportable_month(year, month)
     division = request.form.get("division") or None
     dept = request.form.get("dept") or None
     section = request.form.get("section") or None
@@ -237,6 +240,7 @@ def generate_depreciation_source_summary():
     if df.empty:
         return "ไม่พบข้อมูลตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
     prev_year, prev_month = (year, month - 1) if month > 1 else (year - 1, 12)
+    prev_year, prev_month = db.resolve_reportable_month(prev_year, prev_month)
     prev_df = db.fetch_depreciation_data(prev_year, prev_month, division=division, dept=dept, section=section)
     excel_bytes = db.build_source_summary_excel_bytes(df, year, month, prev_df=prev_df)
     filename = f"depre_source_summary_{year}-{month:02d}.xlsx"

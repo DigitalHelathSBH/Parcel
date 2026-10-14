@@ -61,6 +61,27 @@ def fiscal_be_label(asmst_year: int) -> str:
     return str(asmst_year + 543)
 
 
+def resolve_reportable_month(calendar_year: int, calendar_month: int, max_back: int = 12):
+    """เดือนที่เลือกอาจยังไม่มีค่าเสื่อมที่ปิดงวดเลย (เช่น เพิ่งขึ้นปีงบใหม่ ต.ค. ระบบต้นทาง
+    ยังไม่รันค่าเสื่อมให้ใคร) ถ้าเจอแบบนี้ให้ถอยไปเดือนก่อนหน้าทีละเดือนจนกว่าจะเจอเดือนที่
+    มีข้อมูลจริงอย่างน้อย 1 รายการ (สูงสุด max_back เดือน) แล้วคืนเดือนนั้นแทน"""
+    year, month = calendar_year, calendar_month
+    for _ in range(max_back):
+        asmst_year, fiscal_col = fiscal_year_and_column(year, month)
+        col = f"DEPREAMT{fiscal_col}"
+        result = run_query(
+            f"SELECT TOP 1 1 AS has_data FROM ASMSTYEAR WHERE YEAR = ? AND {col} IS NOT NULL",
+            params=(asmst_year,),
+        )
+        if not result.empty:
+            return year, month
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    return year, month
+
+
 def fetch_depreciation_data(
     calendar_year: int,
     calendar_month: int,
