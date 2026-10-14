@@ -236,7 +236,9 @@ def generate_depreciation_source_summary():
     df = db.fetch_depreciation_data(year, month, division=division, dept=dept, section=section)
     if df.empty:
         return "ไม่พบข้อมูลตามเงื่อนไขที่เลือก กรุณาลองเงื่อนไขอื่น", 400
-    excel_bytes = db.build_source_summary_excel_bytes(df, year, month)
+    prev_year, prev_month = (year, month - 1) if month > 1 else (year - 1, 12)
+    prev_df = db.fetch_depreciation_data(prev_year, prev_month, division=division, dept=dept, section=section)
+    excel_bytes = db.build_source_summary_excel_bytes(df, year, month, prev_df=prev_df)
     filename = f"depre_source_summary_{year}-{month:02d}.xlsx"
     return send_file(
         BytesIO(excel_bytes),

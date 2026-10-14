@@ -323,13 +323,16 @@ def build_detail_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_mont
 
 
 _SOURCE_SUMMARY_COLUMNS = [
-    "แหล่งเงิน / ประเภท", "จำนวน", "มูลค่ารวม", "อายุการใช้งาน (ปี)",
+    "แหล่งเงิน / ประเภท", "จำนวน (เดือนก่อนหน้า)", "มูลค่ารวม (เดือนก่อนหน้า)",
+    "จำนวน", "มูลค่ารวม", "อายุการใช้งาน (ปี)", "ค่าเสื่อม ประจำเดือน",
     "ค่าเสื่อมราคา ประจำปี", "ค่าเสื่อมราคา สะสม", "มูลค่าสุทธิ",
 ]
-_SOURCE_SUMMARY_WIDTHS = [34, 10, 16, 14, 16, 16, 16]
+_SOURCE_SUMMARY_WIDTHS = [34, 14, 16, 10, 16, 14, 14, 16, 16, 16]
 
 
-def build_source_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calendar_month: int) -> bytes:
+def build_source_summary_excel_bytes(
+    df: pd.DataFrame, calendar_year: int, calendar_month: int, prev_df: pd.DataFrame = None
+) -> bytes:
     asmst_year, _ = fiscal_year_and_column(calendar_year, calendar_month)
     fiscal_be = fiscal_be_label(asmst_year)
     month_label = THAI_MONTHS[calendar_month]
@@ -363,40 +366,66 @@ def build_source_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calen
         cell.border = _BORDER
     row += 1
 
+    prev_agg = None
+    if prev_df is not None and not prev_df.empty:
+        prev_agg = prev_df.groupby(["BudgetLabel", "ArticleGroupLabel"], sort=False).agg(
+            prev_count=("ASSETCODE", "count"),
+            prev_value=("TotalValue", "sum"),
+        )
+
+    def _prev_lookup(budget_label, art_label):
+        if prev_agg is None or (budget_label, art_label) not in prev_agg.index:
+            return 0, 0.0
+        r = prev_agg.loc[(budget_label, art_label)]
+        return int(r["prev_count"]), float(r["prev_value"])
+
+    grand_prev_count = 0
+    grand_prev_value = 0.0
     grand_count = 0
     grand_value = 0.0
+    grand_month = 0.0
     grand_year = 0.0
     grand_accum = 0.0
     grand_net = 0.0
+
+    # centered (not right-aligned numeric) columns: group label, prev count, count
+    _CENTER_COLS = {2, 4}
 
     for budget_label, bdf in df.groupby("BudgetLabel", sort=False):
         agg = bdf.groupby("ArticleGroupLabel", sort=False).agg(
             count=("ASSETCODE", "count"),
             TotalValue=("TotalValue", "sum"),
             UsefulLifeYears=("UsefulLifeYears", "first"),
+            DepreMonth=("DepreMonth", "sum"),
             DepreYearCum=("DepreYearCum", "sum"),
             AccumDepre=("AccumDepre", "sum"),
             NetValue=("NetValue", "sum"),
         ).reset_index()
 
+        sub_prev_count = 0
+        sub_prev_value = 0.0
         for _, r in agg.iterrows():
+            prev_count, prev_value = _prev_lookup(budget_label, r["ArticleGroupLabel"])
+            sub_prev_count += prev_count
+            sub_prev_value += prev_value
             values = [
-                r["ArticleGroupLabel"], r["count"], r["TotalValue"], r["UsefulLifeYears"],
-                r["DepreYearCum"], r["AccumDepre"], r["NetValue"],
+                r["ArticleGroupLabel"], prev_count, prev_value, r["count"], r["TotalValue"],
+                r["UsefulLifeYears"], r["DepreMonth"], r["DepreYearCum"], r["AccumDepre"], r["NetValue"],
             ]
             for col_idx, value in enumerate(values, start=1):
                 cell = ws.cell(row, col_idx, value)
                 cell.font = Font(name=THAI_FONT, size=12)
                 cell.border = _BORDER
-                if col_idx >= 3:
+                if col_idx in _CENTER_COLS:
+                    cell.alignment = Alignment(horizontal="center")
+                elif col_idx >= 2:
                     cell.number_format = "#,##0.00"
                     cell.alignment = Alignment(horizontal="right")
-                elif col_idx == 2:
-                    cell.alignment = Alignment(horizontal="center")
             row += 1
 
         sub_count = int(agg["count"].sum())
         sub_value = float(agg["TotalValue"].sum())
+        sub_month = float(agg["DepreMonth"].sum())
         sub_year = float(agg["DepreYearCum"].sum())
         sub_accum = float(agg["AccumDepre"].sum())
         sub_net = float(agg["NetValue"].sum())
@@ -405,19 +434,25 @@ def build_source_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calen
         tc.font = Font(name=THAI_FONT, size=12, bold=True)
         tc.fill = _GROUP_FILL
         for col_idx, val in [
-            (2, sub_count), (3, sub_value), (5, sub_year), (6, sub_accum), (7, sub_net),
+            (2, sub_prev_count), (3, sub_prev_value), (4, sub_count), (5, sub_value),
+            (7, sub_month), (8, sub_year), (9, sub_accum), (10, sub_net),
         ]:
             c = ws.cell(row, col_idx, val)
             c.font = Font(name=THAI_FONT, size=12, bold=True)
             c.fill = _GROUP_FILL
-            if col_idx != 2:
+            if col_idx in _CENTER_COLS:
+                c.alignment = Alignment(horizontal="center")
+            else:
                 c.number_format = "#,##0.00"
-            c.alignment = Alignment(horizontal="right" if col_idx != 2 else "center")
-        ws.cell(row, 4).fill = _GROUP_FILL
+                c.alignment = Alignment(horizontal="right")
+        ws.cell(row, 6).fill = _GROUP_FILL
         row += 1
 
+        grand_prev_count += sub_prev_count
+        grand_prev_value += sub_prev_value
         grand_count += sub_count
         grand_value += sub_value
+        grand_month += sub_month
         grand_year += sub_year
         grand_accum += sub_accum
         grand_net += sub_net
@@ -425,13 +460,16 @@ def build_source_summary_excel_bytes(df: pd.DataFrame, calendar_year: int, calen
     gcell = ws.cell(row, 1, "รวมทั้งสิ้น")
     gcell.font = Font(name=THAI_FONT, size=14, bold=True)
     for col_idx, val in [
-        (2, grand_count), (3, grand_value), (5, grand_year), (6, grand_accum), (7, grand_net),
+        (2, grand_prev_count), (3, grand_prev_value), (4, grand_count), (5, grand_value),
+        (7, grand_month), (8, grand_year), (9, grand_accum), (10, grand_net),
     ]:
         c = ws.cell(row, col_idx, val)
         c.font = Font(name=THAI_FONT, size=14, bold=True)
-        if col_idx != 2:
+        if col_idx in _CENTER_COLS:
+            c.alignment = Alignment(horizontal="center")
+        else:
             c.number_format = "#,##0.00"
-        c.alignment = Alignment(horizontal="right" if col_idx != 2 else "center")
+            c.alignment = Alignment(horizontal="right")
 
     buf = io.BytesIO()
     wb.save(buf)
