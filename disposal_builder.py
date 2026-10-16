@@ -29,10 +29,18 @@ def fetch_disposal_data(division=None, dept=None, section=None) -> pd.DataFrame:
     conditions = [
         "cm.DISPOSDATETIME IS NOT NULL",
         "cm.DISPOSCODE IS NOT NULL",
-        # exclude assets with a later transfer (ASMSTTF) after the disposal date -
-        # that means it was actually brought back into use, not really disposed
+        # exclude assets with a later transfer (ASMSTTF) after the disposal date that
+        # actually moved the asset somewhere different - that means it was brought back
+        # into use, not really disposed. Many transfer rows are pure GL/department
+        # reclassifications entered after the real disposal (same LOCATION, or when
+        # LOCATION isn't tracked, same division/dept/section on both sides) and don't
+        # count as evidence the asset came back into use
         "NOT EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
-        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME)",
+        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME"
+        " AND ((tf.FROMLOCATION IS NOT NULL AND tf.TOLOCATION IS NOT NULL AND tf.FROMLOCATION <> tf.TOLOCATION)"
+        " OR ((tf.FROMLOCATION IS NULL OR tf.TOLOCATION IS NULL)"
+        " AND (tf.FROMLOCATEDIVISION <> tf.TOLOCATEDIVISION OR tf.FROMLOCATEDEPT <> tf.TOLOCATEDEPT"
+        " OR tf.FROMLOCATESECTION <> tf.TOLOCATESECTION))))",
     ]
     params = []
 

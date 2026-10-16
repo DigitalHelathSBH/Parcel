@@ -102,10 +102,18 @@ def fetch_depreciation_data(
         # missing (e.g. a transfer cleared DISPOSCODE but left a stale DISPOSDATETIME
         # behind, or vice versa) treat the asset as not disposed. Also: a later transfer
         # record (ASMSTTF) after the disposal date means the asset was brought back into
-        # use even though DISPOSCODE/DISPOSDATETIME were never cleared
+        # use even though DISPOSCODE/DISPOSDATETIME were never cleared - but only if that
+        # transfer actually moved the asset somewhere different. Many transfer rows are
+        # pure GL/department reclassifications entered after the real disposal (same
+        # LOCATION, or when LOCATION isn't tracked, same division/dept/section on both
+        # sides) and don't mean the asset came back into use
         "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?"
         " OR EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
-        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME))",
+        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME"
+        " AND ((tf.FROMLOCATION IS NOT NULL AND tf.TOLOCATION IS NOT NULL AND tf.FROMLOCATION <> tf.TOLOCATION)"
+        " OR ((tf.FROMLOCATION IS NULL OR tf.TOLOCATION IS NULL)"
+        " AND (tf.FROMLOCATEDIVISION <> tf.TOLOCATEDIVISION OR tf.FROMLOCATEDEPT <> tf.TOLOCATEDEPT"
+        " OR tf.FROMLOCATESECTION <> tf.TOLOCATESECTION)))))",
         # don't show assets acquired after the report's as-of month
         "cm.ACQDATETIME <= ?",
     ]
