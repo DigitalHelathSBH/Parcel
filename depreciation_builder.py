@@ -100,20 +100,14 @@ def fetch_depreciation_data(
     conditions = [
         # a genuine disposal needs BOTH DISPOSCODE and DISPOSDATETIME; if either is
         # missing (e.g. a transfer cleared DISPOSCODE but left a stale DISPOSDATETIME
-        # behind, or vice versa) treat the asset as not disposed. Also: a later transfer
-        # record (ASMSTTF) after the disposal date means the asset was brought back into
-        # use even though DISPOSCODE/DISPOSDATETIME were never cleared - but only if that
-        # transfer actually moved the asset somewhere different. Many transfer rows are
-        # pure GL/department reclassifications entered after the real disposal (same
-        # LOCATION, or when LOCATION isn't tracked, same division/dept/section on both
-        # sides) and don't mean the asset came back into use
-        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?"
-        " OR EXISTS (SELECT 1 FROM ASMSTTF tf WHERE tf.ASSETCODE = cm.ASSETCODE"
-        " AND tf.MAKEDATETIME > cm.DISPOSDATETIME"
-        " AND ((tf.FROMLOCATION IS NOT NULL AND tf.TOLOCATION IS NOT NULL AND tf.FROMLOCATION <> tf.TOLOCATION)"
-        " OR ((tf.FROMLOCATION IS NULL OR tf.TOLOCATION IS NULL)"
-        " AND (tf.FROMLOCATEDIVISION <> tf.TOLOCATEDIVISION OR tf.FROMLOCATEDEPT <> tf.TOLOCATEDEPT"
-        " OR tf.FROMLOCATESECTION <> tf.TOLOCATESECTION)))))",
+        # behind, or vice versa) treat the asset as not disposed. If both are set, the
+        # asset is disposed/transferred-out, full stop - don't look at ASMSTTF transfer
+        # history at all. We used to treat a later ASMSTTF row as "undoing" the disposal,
+        # but that log isn't reliable evidence of physical reuse here: confirmed on real
+        # disposed/transferred-out assets (7440-011-0002/468, /1331, 7440-013-0001/767)
+        # that still had later ASMSTTF rows - sometimes same location, sometimes a real
+        # division/dept change - none of which meant the asset actually came back into use
+        "(cm.DISPOSCODE IS NULL OR cm.DISPOSDATETIME IS NULL OR cm.DISPOSDATETIME > ?)",
         # don't show assets acquired after the report's as-of month
         "cm.ACQDATETIME <= ?",
     ]
