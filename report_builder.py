@@ -92,9 +92,21 @@ def list_depts(division: str) -> pd.DataFrame:
 
 def list_sections(division: str, dept: str) -> pd.DataFrame:
     cond = _EXCLUDE_NAME_SQL.format(col="SectionName")
+    # บางครั้งงานถูกยุบ/เปลี่ยนชื่อจนหายไปจากตาราง Section แล้ว แต่ครุภัณฑ์ยังค้างอยู่ที่รหัสงาน
+    # เดิม (LOCATESECTION ใน ASMSTCM) เช่น ย้ายคนไปงานใหม่แต่ยังไม่ได้ย้ายของ - เติมรหัสเหล่านี้
+    # เข้าไปในตัวเลือกด้วย จะได้กรองดูของที่ค้างอยู่ได้ แม้ชื่องานจะไม่มีในระบบแล้ว
     return run_query(
-        f"SELECT Section, SectionName FROM Section WHERE Division = ? AND Dept = ? AND (SectionName IS NULL OR {cond}) ORDER BY Section",
-        params=(division, dept),
+        f"""
+        SELECT Section, SectionName FROM Section
+        WHERE Division = ? AND Dept = ? AND (SectionName IS NULL OR {cond})
+        UNION
+        SELECT DISTINCT cm.LOCATESECTION AS Section, N'(ไม่พบชื่องานในระบบ - อาจย้าย/ยกเลิกแล้ว)' AS SectionName
+        FROM ASMSTCM cm
+        WHERE cm.LOCATEDIVISION = ? AND cm.LOCATEDEPT = ? AND cm.LOCATESECTION IS NOT NULL
+          AND cm.LOCATESECTION NOT IN (SELECT Section FROM Section WHERE Division = ? AND Dept = ?)
+        ORDER BY Section
+        """,
+        params=(division, dept, division, dept, division, dept),
     )
 
 
